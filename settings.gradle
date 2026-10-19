@@ -1,1 +1,6 @@
+pluginManagement {
+    repositories { gradlePluginPortal() }
+}
+// Lets Gradle download the Java 27 toolchain if it is not already installed.
+plugins { id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0' }
 rootProject.name = 'frostbite-desktop'
