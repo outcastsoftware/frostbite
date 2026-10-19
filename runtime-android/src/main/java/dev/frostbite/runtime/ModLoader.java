@@ -8,6 +8,7 @@ import dev.frostbite.api.MethodSelector;
 import dev.frostbite.api.ModContext;
 import dev.frostbite.api.ModInitializer;
 import dev.frostbite.api.SelectorMode;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -101,7 +102,7 @@ public final class ModLoader {
         if (!name.equals(id + ".frostbite") && !name.equals(id + ".frostmod"))
             throw new IOException("Mod ID does not match package name: " + name);
         String version = descriptor.getString("version");
-        if (version.isBlank()) throw new IOException("Empty mod version in " + name);
+        if (version.trim().isEmpty()) throw new IOException("Empty mod version in " + name);
         ClassLoader loader = new DexClassLoader(archive.getAbsolutePath(),
                 directory.getAbsolutePath(), null, context.getClassLoader());
         String entrypointName = descriptor.getString("entrypoint");
@@ -173,9 +174,15 @@ public final class ModLoader {
     }
 
     private static String readLimited(InputStream input, int maximum) throws IOException {
-        byte[] data = input.readNBytes(maximum + 1);
-        if (data.length > maximum) throw new IOException("Frostbite metadata exceeds size limit");
-        return new String(data, StandardCharsets.UTF_8);
+        // InputStream.readNBytes(int) is API 33+, but minSdk is 26; read manually instead.
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        byte[] chunk = new byte[8192];
+        int count;
+        while ((count = input.read(chunk)) != -1) {
+            buffer.write(chunk, 0, count);
+            if (buffer.size() > maximum) throw new IOException("Frostbite metadata exceeds size limit");
+        }
+        return new String(buffer.toByteArray(), StandardCharsets.UTF_8);
     }
 
     private static void copyLimited(InputStream input, File output, int maximum) throws IOException {
