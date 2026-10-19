@@ -1,0 +1,24 @@
+plugins { id 'application' }
+
+group = 'dev.frostbite'
+version = '0.1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven { url 'https://jitpack.io' }
+}
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(27) }
+}
+
+dependencies {
+    // Prebuilt from the framework branch; keeps Desktop buildable without the core source.
+    implementation files('libs/frostbite-host-tools.jar')
+    implementation 'org.json:json:20250517'
+    implementation 'org.apktool:apktool-cli:3.0.3'
+}
+
+application {
+    mainClass = 'dev.frostbite.desktop.FrostbiteDesktopApp'
+}
