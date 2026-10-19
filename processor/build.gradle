@@ -1,0 +1,4 @@
+plugins { id 'java-library' }
+
+java { toolchain { languageVersion = JavaLanguageVersion.of(27) } }
+dependencies { implementation project(':api') }

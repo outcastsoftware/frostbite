@@ -1,0 +1,21 @@
+plugins {
+    id 'com.android.library' version '9.4.0' apply false
+}
+
+allprojects {
+    group = 'dev.frostbite'
+    version = '0.1.0-SNAPSHOT'
+    repositories { google(); mavenCentral() }
+}
+
+tasks.register('runtimeBundle', Zip) {
+    dependsOn ':api:jar', ':runtime-android:assembleDebug'
+    archiveFileName = 'frostbite-runtime.zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from(project(':api').tasks.named('jar').flatMap { it.archiveFile }) {
+        rename { 'api.jar' }
+    }
+    from(project(':runtime-android').layout.buildDirectory.file('outputs/aar/runtime-android-debug.aar')) {
+        rename { 'runtime.aar' }
+    }
+}
