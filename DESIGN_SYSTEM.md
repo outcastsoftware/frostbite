@@ -2,7 +2,7 @@
 
 ## 1. Product
 
-Frostbite Desktop is a Java 27 Swing tool for mod authors. Its two views install the Frostbite runtime into a game APK and add mod APKs. The interface is a compact desktop workspace with one primary action per view.
+Frostbite Desktop is a Java 27 Swing tool for mod authors. Its two views install the Frostbite runtime into a game APK and add or remove `.frostbite` mods. The interface is a compact desktop workspace with one primary action per view.
 
 ## 2. Direction
 
@@ -48,7 +48,7 @@ The Outcast mark is the primary icon. The title bar uses drawn Windows style min
 
 ## 9. Assets
 
-The new transparent vector logo is [outcast-breach.svg](../logo/outcast-breach.svg). The desktop resource [outcast-logo.svg](src/main/resources/outcast-logo.svg) is the copy rendered at runtime. The supplied original stays in `C:\outcast\logo` for reference.
+The new transparent vector logo is [outcast-breach.svg](logo/outcast-breach.svg). The desktop resource [outcast-logo.svg](src/main/resources/outcast-logo.svg) is the copy rendered at runtime. The branding source files are in this branch's [`logo/`](logo/) directory.
 
 ## 10. Motion
 
