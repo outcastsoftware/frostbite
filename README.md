@@ -43,7 +43,7 @@ An annotation processor cannot safely turn arbitrary Java code into a Dobby repl
 The target deployment uses one desktop app with two tabs and one in-game runtime:
 
 1. **Install Frostbite tab:** selects a game APK, runtime ZIP, launch Activity, and output. Its backend patches the APK, rebuilds it, signs with APK Signature Schemes v1/v2/v3 using the bundled development key, and verifies the output.
-2. **Add Mods tab:** selects a Frostbite-enabled APK, one or more mod APKs, and an output. Its backend validates/extracts mod payloads, updates the mod index, signs with v1/v2/v3 using the same bundled key, and verifies the output.
+2. **Mods tab:** selects a Frostbite-enabled APK, one or more `.frostbite` mods to add and/or installed mods to remove, and an output. Its backend validates/extracts added mod payloads, rewrites the mod index with the resulting set, signs with v1/v2/v3 using the same bundled key, and verifies the output.
 3. **Frostbite in-game runtime:** already embedded by the installer; at game startup it reads the mod index, loads each mod's DEX, calls its initializer, collects its mixins, and installs IL2CPP hooks.
 
 The desktop Mod Loader does not execute mod code itself. It packages mod code into the target APK. The embedded Frostbite runtime loads and executes that code inside the game's process. This keeps APK editing out of the game process and keeps hook installation inside it. A mod menu can later be a mod built on top of this system; it is outside the current implementation scope.
@@ -145,8 +145,8 @@ Keep the three deliverables separate:
 | --- | --- | --- |
 | Frostbite core repository | API, annotation processor, Android bootstrap/runtime, mod discovery/loading, JNI runtime, ByNameModding adapter, Dobby hooks | Android runtime artifact plus `libfrostbite.so` for each supported ABI |
 | Frostbite Installer repository | Host-side desktop GUI for APK integration | Desktop application; Frostbite-enabled APK |
-| Frostbite Mod Loader repository | Host-side desktop GUI for mod APK import/packaging | Desktop application; updated Frostbite-enabled APK containing mod payloads |
-| Frostbite mod project | `ModInitializer`, mixin classes, annotation-processor output, optional mod data | Mod APK or `.frostbite` package containing `classes.dex`, `mod.json`, hook manifest, and optional assets |
+| Frostbite Mod Loader repository | Host-side desktop GUI for `.frostbite` mod import, removal, and packaging | Desktop application; updated Frostbite-enabled APK containing mod payloads |
+| Frostbite mod project | `ModInitializer`, mixin classes, annotation-processor output, optional mod data | `.frostbite` package (or legacy mod APK) containing `classes.dex`, `mod.json`, hook manifest, and optional native libraries |
 
 The patched `MainActivity` must be able to resolve the bootstrap bridge before it can load mods. Put that small bridge in the APK's normal DEX set (ideally the primary DEX) and have it call into the Frostbite Android runtime. The two host-side desktop apps operate on APK files; they are not loaded into the game. The in-game mod loader is part of the Frostbite Android runtime and loads each separate mod DEX. Mod projects compile against Frostbite API classes but must not package duplicate copies of those classes.
 
@@ -393,13 +393,13 @@ The native runtime builds only for `armeabi-v7a` and `arm64-v8a`. Its CMake file
 
 ### Phase 2: installer, mod loader, and in-game mod discovery
 
-1. Define the mod APK contract: a declared `ModInitializer`, generated `mod.json`, and generated hook manifest inside the mod APK.
+1. Define the mod package contract: a declared `ModInitializer`, generated `mod.json`, and generated hook manifest inside each `.frostbite` package (or legacy mod APK).
 2. Build the Installer GUI workflow to add the Frostbite Android runtime/bootstrap/native libraries to one supported game APK profile and patch its `MainActivity` call.
-3. Build the Mod Loader GUI workflow to validate a Frostbite-enabled APK plus mod APK inputs, extract each mod's `classes.dex` and Frostbite assets, package them as `.frostbite` files, and update the asset index.
+3. Build the Mod Loader GUI workflow to validate a Frostbite-enabled APK plus `.frostbite` mod inputs, embed each mod's `classes.dex` and Frostbite assets as a `.frostbite` package, remove mods on request, and rewrite the asset index.
 4. Build the embedded runtime's discovery path: read the index, validate unique IDs/API versions, extract each DEX, and create a parent-first class loader per mod.
 5. Load each declared `ModInitializer` by its named entrypoint; do not scan all DEX classes. Sign the resulting APK with v1/v2/v3 using the bundled development key, verify the signatures, then install it.
 
-**Done when:** the Installer GUI produces a launchable Frostbite-enabled test APK; the Mod Loader GUI adds two mod APKs as separate payloads; Frostbite discovers both, calls each compatible `onLoad` once, rejects duplicate IDs/API mismatches clearly, and does so before installing hooks.
+**Done when:** the Installer GUI produces a launchable Frostbite-enabled test APK; the Mod Loader GUI adds two `.frostbite` mods as separate payloads; Frostbite discovers both, calls each compatible `onLoad` once, rejects duplicate IDs/API mismatches clearly, and does so before installing hooks.
 
 ### Phase 3: mixin registration and IL2CPP resolution without hooks
 
@@ -444,8 +444,8 @@ The native runtime builds only for `armeabi-v7a` and `arm64-v8a`. Its CMake file
 - `@FrostbiteMod` marks a `ModInitializer`; the processor emits versioned mod and hook manifests.
 - The Android runtime reads an explicit mod index, validates packages, loads each mod DEX with `DexClassLoader`, calls `onLoad`, and registers callback declarations in memory.
 - `HookResolver` matches candidate method metadata, rejects missing/ambiguous targets and non-void `TAIL`, and orders callbacks.
-- The separate [Frostbite-Sample-Mod](../fr/Frostbite-Sample-Mod) Android project builds an installable mod APK using only Java source.
-- The combined [Frostbite-Desktop](../fr/Frostbite-Desktop) GUI has **Install Frostbite** and **Add Mods** tabs. It patches the launch Activity, embeds the runtime and mod packages, and signs each output.
+- The separate [Frostbite-Sample-Mod](https://github.com/outcastsoftware/frostbite/tree/sample) Android project builds a `.frostbite` mod using only Java source (`packageFrostbite`).
+- The combined [Frostbite-Desktop](https://github.com/outcastsoftware/frostbite/tree/main) GUI has **Install Frostbite** and **Mods** tabs. It patches the launch Activity, embeds the runtime and `.frostbite` mod packages, removes mods on request, and signs each output.
 
 The Android AAR and host tools build with JDK 27 for `armeabi-v7a` and `arm64-v8a`. On the `Pixel_10_Pro_XL` emulator, the resulting Subway Surfers 3.70.3 APK loaded the sample mod, installed one BNM-resolved Dobby hook, and logged `CharacterMotor.UpdateMovement HEAD call=1`, `TAIL call=1`, `HEAD call=301`, and `TAIL call=301` during gameplay. The sample's Java callbacks require no mod-authored C++.
 

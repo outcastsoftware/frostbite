@@ -43,20 +43,22 @@ Open the separate `Frostbite-Desktop` project and run Gradle `installDist`. On W
 fr/Frostbite-Desktop/build/install/frostbite-desktop/bin/frostbite-desktop.bat
 ```
 
-The desktop project uses the core source through a Gradle composite build. The app has two tabs, uses one bundled development key for both, and finds the Android SDK installed on this computer.
+The desktop project is self-contained: it builds against a prebuilt `host-tools` jar in its own `libs/` and does not need the core source. The app has two tabs, uses one bundled development key for both, and finds the Android SDK installed on this computer.
 
 ## 2. Make a Java mod
 
-Use `fr/Frostbite-Sample-Mod` as a starting project. Its `settings.gradle` includes the core build, and its `build.gradle` declares:
+Use `Frostbite-Sample-Mod` as a starting project. It is self-contained: prebuilt Frostbite jars live in its `libs/`, so a mod builds without the core source. Its `build.gradle` declares:
 
 ```groovy
 dependencies {
-    compileOnly 'dev.frostbite:api:0.1.0-SNAPSHOT'
-    annotationProcessor 'dev.frostbite:processor:0.1.0-SNAPSHOT'
+    compileOnly files('libs/frostbite-api.jar')
+    annotationProcessor files('libs/frostbite-processor.jar', 'libs/frostbite-api.jar')
 }
 ```
 
-If you move the mod project, update the `includeBuild('../../Frostbite')` path. Give your own mod a unique Android `applicationId` and a unique Frostbite ID. The entrypoint must implement `ModInitializer`:
+Those jars are built from the `framework` branch (`frostbite-api.jar`, `frostbite-processor.jar`, and `frostbite-host-tools.jar` for `packageFrostbite`). Rebuild and replace them when the core API changes.
+
+Give your own mod a unique Android `applicationId` and a unique Frostbite ID. The entrypoint must implement `ModInitializer`:
 
 ```java
 @FrostbiteMod(id = "subway-tools", version = "0.1.0")
