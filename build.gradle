@@ -1,0 +1,50 @@
+plugins { id 'com.android.application' version '9.4.0' }
+
+android {
+    namespace 'dev.frostbite.sample'
+    compileSdk 37
+    defaultConfig {
+        applicationId 'dev.frostbite.sample'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+repositories { google(); mavenCentral() }
+
+// Prebuilt Frostbite jars live in libs/, so a mod builds without the core source.
+configurations { frostbitePackager }
+dependencies {
+    compileOnly files('libs/frostbite-api.jar')
+    annotationProcessor files('libs/frostbite-processor.jar', 'libs/frostbite-api.jar')
+    frostbitePackager files('libs/frostbite-host-tools.jar')
+    frostbitePackager 'org.json:json:20250517'
+}
+
+// Builds the release mod APK, then strips it to a branded .frostbite mod
+// (DEX, ARM libraries, and Frostbite manifests only). Not named assembleRelease
+// because the Android plugin already owns that task.
+tasks.register('packageFrostbite', JavaExec) {
+    description = 'Packages the release mod APK as a branded .frostbite mod.'
+    group = 'frostbite'
+    dependsOn 'assembleRelease'
+    classpath = configurations.frostbitePackager
+    mainClass = 'dev.frostbite.host.ModPackager'
+    def releaseDir = layout.buildDirectory.dir('outputs/apk/release')
+    def out = layout.buildDirectory.file("outputs/frostbite/${project.name}.frostbite")
+    outputs.file out
+    doFirst {
+        // ponytail: takes the only APK in the release dir; a build with product
+        // flavors emits several, so narrow the filter if you add flavors.
+        def apks = releaseDir.get().asFile.listFiles({ f -> f.name.endsWith('.apk') } as FileFilter)
+        if (apks == null || apks.length == 0) throw new GradleException('No release APK; run assembleRelease')
+        out.get().asFile.parentFile.mkdirs()
+        args = [apks[0].absolutePath, out.get().asFile.absolutePath]
+    }
+}
