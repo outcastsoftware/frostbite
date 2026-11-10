@@ -1,0 +1,24 @@
+title: Frostbite
+description: A Java mixin framework for modding Unity IL2CPP Android games — no C++, no offsets.
+remote_theme: just-the-docs/just-the-docs
+
+# GitHub project Pages serve at https://<user>.github.io/<repo>/.
+# If you use a different host/path, change these two lines.
+url: "https://outcastsoftware.github.io"
+baseurl: "/frostbite"
+
+plugins:
+  - jekyll-remote-theme
+
+color_scheme: dark
+search_enabled: true
+
+aux_links:
+  "GitHub":
+    - "https://github.com/outcastsoftware/frostbite"
+aux_links_new_tab: true
+
+# These files are project docs, not site pages.
+exclude:
+  - Gemfile
+  - Gemfile.lock

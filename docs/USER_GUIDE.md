@@ -1,3 +1,8 @@
+---
+title: User Guide
+nav_order: 2
+---
+
 # Frostbite — From Java to Modding Any IL2CPP Game
 
 This is a complete course. If you can read and write ordinary **Java** — classes, methods,

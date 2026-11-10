@@ -1,3 +1,8 @@
+---
+title: Build Pipeline
+nav_order: 3
+---
+
 # Build and use Frostbite
 
 Frostbite lets a mod author write Java callbacks for Unity IL2CPP methods. The mod author does not write C++. The Frostbite runtime supplies the JNI bridge and native hooks. A desktop app handles the two APK packaging steps.
