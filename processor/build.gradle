@@ -1,4 +1,5 @@
 plugins { id 'java-library' }
 
 java { toolchain { languageVersion = JavaLanguageVersion.of(27) } }
+compileJava { options.release = 17 }
 dependencies { implementation project(':api') }

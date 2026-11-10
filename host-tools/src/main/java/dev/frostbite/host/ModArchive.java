@@ -22,6 +22,7 @@ public record ModArchive(String id, String fileName, byte[] bytes) {
     private static final int MAX_PACKAGE_BYTES = 64 * 1024 * 1024;
     private static final int MAX_JSON_BYTES = 1024 * 1024;
     private static final String HOOKS = "META-INF/frostbite/hooks.json";
+    private static final String MIXINS = "META-INF/frostbite/mixins.json";
 
     public static ModArchive fromFile(Path file) throws IOException {
         String name = file.getFileName().toString().toLowerCase(Locale.ROOT);
@@ -56,7 +57,7 @@ public record ModArchive(String id, String fileName, byte[] bytes) {
                     if (nativeLibrary(name)) libraries.add(name);
                     else if (!apkInput) throw new IOException("Unsupported native library path: " + name);
                 } else if (!apkInput && !entry.isDirectory() &&
-                        !name.equals("mod.json") && !name.equals(HOOKS)) {
+                        !name.equals("mod.json") && !name.equals(HOOKS) && !name.equals(MIXINS)) {
                     throw new IOException("Unexpected Frostbite package entry: " + name);
                 }
             }
@@ -97,6 +98,9 @@ public record ModArchive(String id, String fileName, byte[] bytes) {
                     add(output, dexName, dex);
                 }
                 add(output, HOOKS, hooks);
+                // Optional: generated accessor-implementation manifest (absent for inject-only mods).
+                ZipEntry mixinsEntry = zip.getEntry(MIXINS);
+                if (mixinsEntry != null) add(output, MIXINS, read(zip, MIXINS, MAX_JSON_BYTES));
                 for (String library : libraries) {
                     byte[] binary = read(zip, library, MAX_PACKAGE_BYTES);
                     if (binary.length < 4 || binary[0] != 0x7f || binary[1] != 'E' ||

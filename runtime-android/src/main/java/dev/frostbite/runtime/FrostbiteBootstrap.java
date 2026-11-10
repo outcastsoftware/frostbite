@@ -2,13 +2,15 @@ package dev.frostbite.runtime;
 
 import android.content.Context;
 import android.util.Log;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /** Called by the patched activity. Process scoped and safe across activity recreation. */
 public final class FrostbiteBootstrap {
     private static final String TAG = "Frostbite";
     private static State state = State.NEW;
-    private static List<LoadedMod> mods = List.of();
+    private static List<LoadedMod> mods = Collections.emptyList();
 
     private FrostbiteBootstrap() {}
 
@@ -27,7 +29,9 @@ public final class FrostbiteBootstrap {
     }
 
     public static synchronized String state() { return state.name(); }
-    public static synchronized List<LoadedMod> loadedMods() { return List.copyOf(mods); }
+    public static synchronized List<LoadedMod> loadedMods() {
+        return Collections.unmodifiableList(new ArrayList<>(mods));
+    }
 
     private enum State { NEW, STARTING, MODS_LOADED, FAILED }
 }

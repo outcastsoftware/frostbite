@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -46,7 +47,7 @@ public final class ModLoader {
             index = new JSONObject(readLimited(input, MAX_JSON_BYTES));
         } catch (FileNotFoundException missingIndex) {
             Log.i(TAG, "No mod index found; starting without mods");
-            return List.of();
+            return Collections.emptyList();
         }
         requireSchema(index, "mod index");
         JSONArray names = index.getJSONArray("mods");
@@ -66,7 +67,7 @@ public final class ModLoader {
                 @Override public void log(String message) { Log.i(TAG + "/" + mod.id(), message); }
             });
         }
-        return List.copyOf(loaded);
+        return Collections.unmodifiableList(loaded);
     }
 
     private LoadedMod loadOne(String name) throws Exception {
@@ -83,6 +84,7 @@ public final class ModLoader {
 
         JSONObject descriptor;
         JSONObject manifest;
+        Map<String, String> implByMixin = new HashMap<>();
         try (ZipFile zip = new ZipFile(archive)) {
             if (zip.getEntry("classes.dex") == null)
                 throw new IOException(name + " has no classes.dex");
@@ -95,6 +97,16 @@ public final class ModLoader {
                 throw new IOException(name + " has unsupported hook manifest path");
             manifest = readJson(zip, hooksPath);
             requireSchema(manifest, name + " hooks");
+            // Optional: generated accessor implementation classes, one per mixin.
+            if (zip.getEntry("META-INF/frostbite/mixins.json") != null) {
+                JSONObject mixins = readJson(zip, "META-INF/frostbite/mixins.json");
+                requireSchema(mixins, name + " mixins");
+                JSONArray entries = mixins.getJSONArray("mixins");
+                for (int i = 0; i < entries.length(); i++) {
+                    JSONObject entry = entries.getJSONObject(i);
+                    implByMixin.put(entry.getString("class"), entry.getString("impl"));
+                }
+            }
         }
         String id = descriptor.getString("id");
         if (!id.matches("[a-z0-9][a-z0-9._-]*"))
@@ -112,13 +124,27 @@ public final class ModLoader {
         if (!ModInitializer.class.isAssignableFrom(entrypointClass))
             throw new IOException(entrypointName + " does not implement ModInitializer");
         ModInitializer initializer = (ModInitializer) entrypointClass.getDeclaredConstructor().newInstance();
-        List<HookDeclaration> hooks = loadHooks(id, manifest.getJSONArray("hooks"), loader);
-        return new LoadedMod(id, version, loader, initializer, List.copyOf(hooks));
+        // One instance per mixin that has accessors (its generated subclass). Created up
+        // front and registered so accessor-only mixins are reachable too, not just hooked ones.
+        Map<Class<?>, Object> mixinInstances = new HashMap<>();
+        for (Map.Entry<String, String> entry : implByMixin.entrySet()) {
+            Class<?> mixinClass = Class.forName(entry.getKey(), true, loader);
+            Class<?> impl = Class.forName(entry.getValue(), true, loader);
+            if (mixinClass.getClassLoader() != loader || impl.getClassLoader() != loader)
+                throw new IOException("Mixin resolved outside mod DEX: " + entry.getKey());
+            if (!mixinClass.isAssignableFrom(impl))
+                throw new IOException(entry.getValue() + " is not a " + entry.getKey());
+            Object instance = impl.getDeclaredConstructor().newInstance();
+            mixinInstances.put(mixinClass, instance);
+            dev.frostbite.api.Mixins.register(mixinClass, instance);
+        }
+        List<HookDeclaration> hooks = loadHooks(id, manifest.getJSONArray("hooks"), loader, mixinInstances);
+        return new LoadedMod(id, version, loader, initializer, Collections.unmodifiableList(hooks));
     }
 
-    private List<HookDeclaration> loadHooks(String id, JSONArray array, ClassLoader loader) throws Exception {
+    private List<HookDeclaration> loadHooks(String id, JSONArray array, ClassLoader loader,
+                                            Map<Class<?>, Object> mixinInstances) throws Exception {
         List<HookDeclaration> hooks = new ArrayList<>();
-        Map<Class<?>, Object> mixinInstances = new HashMap<>();
         for (int i = 0; i < array.length(); i++) {
             JSONObject item = array.getJSONObject(i);
             Class<?> type = Class.forName(item.getString("callbackClass"), true, loader);
@@ -132,6 +158,8 @@ public final class ModLoader {
             if (callback.getReturnType() != void.class ||
                     Modifier.isStatic(callback.getModifiers()) != item.getBoolean("static"))
                 throw new IOException("Invalid callback signature: " + callback);
+            // Inject-only mixins are concrete and not pre-instantiated; create them lazily.
+            // Mixins with accessors were already instantiated (as their generated subclass).
             Object mixin = Modifier.isStatic(callback.getModifiers())
                     ? null : mixinInstances.computeIfAbsent(type, t -> {
                         try { return t.getDeclaredConstructor().newInstance(); }

@@ -106,7 +106,60 @@ public void beforeLane(Object self, int lane) { }
 
 Frostbite applies Java `Pattern.matches`, so the **whole canonical signature** must match. Escape literal parentheses in the regex, then double the backslashes in a Java string. A broader `ChangeLane\\(self;.*\\)` can match several overloads; Frostbite rejects an ambiguous result rather than choosing one. Zero matches also fail with a diagnostic. Regex never searches another assembly, namespace, or class.
 
-The current native bridge supports instance targets with zero to two declared arguments, where each argument is an object reference, `int`, or `boolean`. Supported returns are `void`, object reference, `int`, `boolean`, and `float`. Floating-point and 64-bit arguments, value types, static targets, and more than two arguments are not supported. Field and method accessor annotations are declared in the API but are not bound by the current runtime. See the core README for the full contract.
+Injection supports instance **and static** targets (a static selector uses `(static` and its callback has no `self`). Arguments and returns may be any of `int`, `long`, `float`, `double`, `boolean`, enum (as its underlying integer), object reference, or **value type / struct** (which arrives as a boxed object; read its fields with `@AccessField` or `Il2Cpp`). Any number of arguments is allowed. Non-void targets support return override (any scalar or object type). Simple signatures use a fast fixed-shape path; everything else (float/double/long/struct arguments, more than two arguments, 64-bit or `double` returns) is handled by a register-preserving universal trampoline on `arm64-v8a`. If one hook is unsupported or ambiguous it is skipped with a warning and the rest of the mod still loads.
+
+A void target can be **cancelled** (a name-based NOP): declare a trailing `CallbackInfo` and call `cancel()` at HEAD, and the original never runs.
+
+```java
+@Inject(method = "ApplyGravity(self)", at = At.HEAD)
+public void noGravity(Object self, CallbackInfo ci) { ci.cancel(); }
+```
+
+A callback can also **change the arguments** the original method receives. Declare an `Arguments` parameter (after `self` for an instance target) instead of typed-per-argument parameters, and call its `setInt`/`setFloat`/`setObject`/… before the original runs:
+
+```java
+@Inject(method = "ChangeLane(self;int)", at = At.HEAD)
+public void onChangeLane(Object self, Arguments args) {
+    args.setInt(0, 1);   // always change lane to the right
+}
+```
+
+`Arguments` reads and writes every argument type (objects and structs as `Il2CppObject`), and the edits are passed to the original method and to later hooks in the chain. A hook using `Arguments` always runs on the universal trampoline.
+
+The universal trampoline handles any arity, including arguments that spill onto the stack, and return override covers every type including value-type (struct) returns. The `arm64-v8a` path is exercised on-device. The `armeabi-v7a` (32-bit, softfp) universal trampoline is implemented but **experimental and unverified** — it has not been run on a 32-bit target; the library still loads and the fixed-shape path works regardless. Accessors and method invocation (via `@AccessField` / `@AccessStaticField` / `@AccessMethod` or the `Il2Cpp` helper) cover the same type set for both static and instance members and every argument count, through IL2CPP's own invoker.
+
+### Accessors: reading fields, writing fields, and calling methods
+
+Besides hooking, a `@Mixin` can declare **accessors** for its target type. Accessor methods have no body: they are `public abstract` (so the mixin is `abstract`), and Frostbite generates their implementations. Supported value and argument types are `int`, `float`, `boolean`, and object references (`Object` or `Il2CppObject`).
+
+```java
+// instance field get / set (first parameter is the target instance)
+@AccessField(value = "_canAccelerate", mode = AccessMode.GETTER)
+public abstract boolean get_canAccelerate(Object motor);
+@AccessField(value = "_canAccelerate", mode = AccessMode.SETTER)
+public abstract void set_canAccelerate(Object motor, boolean value);
+
+// static field get / set (no instance parameter)
+@AccessStaticField(value = "BalancingBudgetMS", mode = AccessMode.GETTER)
+public abstract int get_budget();
+@AccessStaticField(value = "BalancingBudgetMS", mode = AccessMode.SETTER)
+public abstract void set_budget(int value);
+
+// method invoker (selector picks instance vs static via self/static)
+@AccessMethod("CanChangeLane(self;int)")
+public abstract boolean canChangeLane(Object motor, int lane);
+@AccessMethod("ResetSession(static)")
+public abstract void resetSession();
+```
+
+The static accessors and the static invoker read and write static state on the mixin's target class; no instance is passed. A mixin may hold only accessors and no injections. Frostbite creates one instance per mixin (its generated subclass) and registers it, so any code can reach a mixin's accessors, not just its own callbacks:
+
+```java
+PoolManagerMixin pool = Mixins.get(PoolManagerMixin.class);
+pool.set_budget(pool.get_budget() + 1);
+```
+
+Field get/set and method invocation work for both static and instance members and for every supported type; const fields are readable but not writable. The annotation processor records each mixin's generated implementation in `META-INF/frostbite/mixins.json`.
 
 Build the mod project with Gradle `assembleDebug`. The sample produces `fr/Frostbite-Sample-Mod/build/outputs/apk/debug/frostbite-sample-mod-debug.apk`. The annotation processor creates `META-INF/frostbite/mod.json` and `META-INF/frostbite/hooks.json` in the APK. Those files tell Frostbite which initializer and mixins to load; no manual class scanning or registration is required.
 
