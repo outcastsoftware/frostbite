@@ -1,60 +1,111 @@
-# Frostbite User Guide
+# Frostbite — From Java to Modding Any IL2CPP Game
 
-Frostbite is a mixin framework for Unity **IL2CPP** Android games. You write mods in **Java**
-(no C++, no manual offsets): you annotate Java classes, and Frostbite hooks the game's
-IL2CPP methods, reads and writes its fields, and calls its methods for you by name. A desktop
-app packages everything into a modified game APK.
+This is a complete course. If you can read and write ordinary **Java** — classes, methods,
+annotations, generics, `interface`, `abstract` — you have everything you need to start. By the
+end you will be able to write **any** Frostbite mod: read and change anything in a Unity game,
+intercept any method, and understand exactly what each line does and why.
 
-This guide covers everything from installing the tools to shipping a mod, with a full type
-reference and every limitation. For the build-pipeline details see
-[GETTING_STARTED.md](GETTING_STARTED.md).
+You will **not** write any C++. You will **not** copy memory addresses. You attach Java code to
+the game by **name**, and Frostbite does the dangerous native work for you.
+
+**Contents**
+
+1. [The big idea (what modding even is)](#1-the-big-idea)
+2. [How Frostbite thinks (the mental model)](#2-how-frostbite-thinks)
+3. [Setting up a mod project](#3-setting-up-a-mod-project)
+4. [Lesson 1 — Hello, mod (the entrypoint)](#4-lesson-1--hello-mod)
+5. [Lesson 2 — Your first hook](#5-lesson-2--your-first-hook)
+6. [Lesson 3 — Selectors: naming a method](#6-lesson-3--selectors-naming-a-method)
+7. [Lesson 4 — Reading a method's arguments](#7-lesson-4--reading-a-methods-arguments)
+8. [Lesson 5 — The four powers of a hook](#8-lesson-5--the-four-powers-of-a-hook)
+9. [Lesson 6 — Accessors: fields and method calls](#9-lesson-6--accessors-fields-and-method-calls)
+10. [Lesson 7 — The `Il2Cpp` helper and the `Mixins` registry](#10-lesson-7--the-il2cpp-helper-and-the-mixins-registry)
+11. [Lesson 8 — Objects and structs (the one tricky concept)](#11-lesson-8--objects-and-structs)
+12. [Lesson 9 — Build a real cheat, start to finish](#12-lesson-9--build-a-real-cheat)
+13. [Build, install, run](#13-build-install-run)
+14. [Full reference](#14-full-reference)
+15. [Every limitation and edge case](#15-every-limitation-and-edge-case)
+16. [Troubleshooting](#16-troubleshooting)
+17. [Glossary](#17-glossary)
 
 ---
 
-## 1. How it works
+## 1. The big idea
 
+A Unity game you download is, underneath, a pile of **classes and methods** — exactly like a
+Java program. Unity games are usually written in **C#**, which is almost identical to Java
+(classes, methods, fields, `this`, inheritance). When the game is built for Android with a mode
+called **IL2CPP**, that C# is translated into native ARM machine code and shipped inside the
+APK as a big library called `libil2cpp.so`.
+
+So the game is running C#-shaped code, compiled to machine code. **Modding** means changing what
+that code does — making the player invincible, giving infinite coins, forcing a function to do
+nothing, and so on.
+
+There are three things you ever want to do to someone else's code:
+
+| You want to…                          | In plain Java terms                               | Frostbite tool |
+| ------------------------------------- | ------------------------------------------------- | -------------- |
+| Run your code when *their* method runs | Like wrapping a method with before/after logic    | **Injection** (`@Inject`) |
+| Read or change *their* fields          | Like `obj.someField` / `obj.someField = x`        | **Field accessor** (`@AccessField`) |
+| Call *their* method yourself           | Like `obj.someMethod(args)`                        | **Method accessor** (`@AccessMethod`) |
+
+Frostbite gives you all three, in Java, by **name**. You say "the class `CharacterMotor` in
+assembly `Assembly-CSharp`, its method `Jump`" and Frostbite finds it in the running game for
+you. You never touch an address.
+
+> **Why is this hard normally?** The game has no names at runtime — IL2CPP strips them into a
+> metadata blob. Normal mod tools make you dump the game, find numeric offsets, and rewrite them
+> every time the game updates. Frostbite uses a library called **BNM** that reads that metadata
+> and resolves names at runtime, and a library called **Dobby** to install the hooks. You get to
+> ignore both.
+
+---
+
+## 2. How Frostbite thinks
+
+Three words you must internalize. They map onto Java concepts you already know.
+
+### Mixin = "my class is glued to their class"
+
+A **mixin** is a Java class you write, tagged with `@Mixin(...)`, that says "everything in here
+is about the game's `CharacterMotor` class." It's the container for your hooks and accessors for
+that one game class.
+
+```java
+@Mixin(assembly = "Assembly-CSharp",
+       namespace = "SYBO.RunnerCore.Character",
+       targetClass = "CharacterMotor")
+public final class CharacterMotorMixin {
+    // everything here targets the game's CharacterMotor
+}
 ```
- your Java mod  ──assembleDebug──▶  mod DEX + generated manifests  ──packageFrostbite──▶  .frostbite
- game APK       ──Install Frostbite tab──▶  Frostbite game APK (runtime + bootstrap patched in)
- Frostbite APK + .frostbite  ──Mods tab──▶  final game APK  ──install on device──▶  mods run in-game
-```
 
-- At build time, an **annotation processor** turns your `@Mixin` / `@Inject` / `@Access*`
-  classes into JSON manifests (`mod.json`, `hooks.json`, `mixins.json`) and, for accessors,
-  generated implementation classes.
-- At runtime, the Frostbite **native runtime** (C++ using [BNM](https://github.com/ByNameModding/BNM-Android)
-  for IL2CPP metadata and [Dobby](https://github.com/BepInEx/Dobby) for hooking) resolves your
-  selectors to real IL2CPP methods **by name**, installs hooks, and dispatches to your Java
-  callbacks. You never deal with addresses or game-version offsets in your mod.
+Think of it like writing an **extension** or a **companion** for a class you don't own.
 
-Mods are plain callbacks and accessors. There is **no in-game menu/overlay, no ESP/drawing, and
-no raw-address memory access** — Frostbite is a code-modding engine, not a mod-menu UI toolkit.
+### Injection = "run my method around their method"
 
----
+An **injection** is a Java method of yours (a *callback*) that Frostbite runs **before** (`HEAD`)
+or **after** (`TAIL`) one of the game's methods. This is the game-modding version of wrapping a
+method. From your callback you can watch what's happening, change the inputs, change the output,
+or stop the original from running at all.
 
-## 2. Prerequisites
+### Accessor = "let me touch their fields and call their methods"
 
-- **JDK 27** and Gradle 9.x to build the Frostbite core. Android mod source/bytecode targets
-  Java 17. (The core's own Gradle must run on a JDK the Gradle version supports — JDK 21 is a
-  safe launcher; toolchains still compile at 27/17.)
-- **Android SDK 37** with `d8`, `zipalign`, `apksigner`. Set `ANDROID_HOME` or
-  `ANDROID_SDK_ROOT`.
-- **Android NDK 26.1.10909125** and CMake to build the native runtime (or reuse the prebuilt
-  `frostbite-runtime.zip`).
-- A complete Unity IL2CPP game APK with an **ARM** library (`arm64-v8a` and/or `armeabi-v7a`).
-  No x86 native library is produced; an emulator must translate ARM (e.g. libhoudini / libnb)
-  or use an ARM image.
-- The desktop app ships one development signing key and uses it automatically.
+An **accessor** is a Java method you *declare but don't write* (abstract) — Frostbite writes the
+body. One kind reads/writes a field; another calls a method. It's the game-modding version of
+reflection, but type-safe and generated for you.
 
-The confirmed target is **Subway Surfers 3.70.3**, launch Activity
-`com.sybogames.chili.multidex.ChiliMultidexSupportActivity`.
+That's the whole philosophy: **your Java classes describe what you want to touch; Frostbite wires
+it to the running game.**
 
 ---
 
-## 3. Create a mod project
+## 3. Setting up a mod project
 
-Start from `frostbite-sample`. A mod is an ordinary Android application project that depends
-only on the prebuilt Frostbite jars in `libs/`, so it builds without the core source:
+A mod is a normal **Android app project** (Gradle) that depends on three prebuilt Frostbite jars.
+It does **not** need the Frostbite source. Copy the `frostbite-sample` project and change its
+ids, or create a project with this `build.gradle`:
 
 ```groovy
 plugins { id 'com.android.application' version '9.4.0' }
@@ -62,7 +113,13 @@ plugins { id 'com.android.application' version '9.4.0' }
 android {
     namespace 'com.example.mymod'
     compileSdk 37
-    defaultConfig { applicationId 'com.example.mymod'; minSdk 26; targetSdk 35 }
+    defaultConfig {
+        applicationId 'com.example.mymod'   // must be unique on the device
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
         targetCompatibility JavaVersion.VERSION_17
@@ -72,221 +129,328 @@ android {
 repositories { google(); mavenCentral() }
 
 dependencies {
+    // The API you write against, only at compile time (it lives in the game already):
     compileOnly files('libs/frostbite-api.jar')
+    // The annotation processor that turns your @Mixin/@Inject classes into manifests:
     annotationProcessor files('libs/frostbite-processor.jar', 'libs/frostbite-api.jar')
 }
 ```
 
-Add the `packageFrostbite` task from the sample's `build.gradle` to produce a `.frostbite`
-package (it strips a release APK down to the mod DEX, manifests, and any ARM libraries).
+Put `frostbite-api.jar`, `frostbite-processor.jar`, and `frostbite-host-tools.jar` in a `libs/`
+folder (they come from the Frostbite core build). Copy the `packageFrostbite` task from the
+sample's `build.gradle` — it turns your built mod into a small `.frostbite` file, which is what
+you actually install.
 
-Give your mod a **unique `applicationId`** and a **unique Frostbite id**.
+**You need:** JDK 27, Android SDK 37 (with `d8`, `zipalign`, `apksigner`), and — only if you
+rebuild the native runtime — NDK 26.1.10909125. Most mod authors never rebuild the runtime; they
+reuse `frostbite-runtime.zip`.
+
+Everything in the rest of this guide goes inside `src/main/java/...` of that project.
 
 ---
 
-## 4. The entrypoint
+## 4. Lesson 1 — Hello, mod
 
-Exactly one class per mod implements `ModInitializer` and carries `@FrostbiteMod`:
+Every mod has exactly **one** entrypoint: a class that implements `ModInitializer` and is tagged
+with `@FrostbiteMod`.
 
 ```java
+package com.example.mymod;
+
+import dev.frostbite.api.FrostbiteMod;
+import dev.frostbite.api.ModContext;
+import dev.frostbite.api.ModInitializer;
+
 @FrostbiteMod(id = "my-mod", version = "1.0.0")
 public final class MyMod implements ModInitializer {
     @Override public void onLoad(ModContext context) {
-        context.log("My Mod loaded");
+        context.log("Hello from my mod!");     // shows in logcat under tag Frostbite/my-mod
     }
 }
 ```
 
-- `id` must match `[a-z0-9][a-z0-9._-]*` and be unique across installed mods.
-- `onLoad` runs when the mod is loaded, **before** IL2CPP is ready — do not call accessors or
-  invoke game methods here; do that from inside a callback (see §5), which only fires once the
-  game is running.
-- `ModContext.log(msg)` writes to logcat under tag `Frostbite/<id>`.
+- `id` is your mod's unique name. Lowercase, digits, `.`, `_`, `-`. No two installed mods may
+  share an id.
+- `onLoad` runs once, when the game starts and loads your mod.
+- `context.log(...)` prints to Android's log (logcat).
+
+> **Important rule you'll forget once:** `onLoad` runs **before the game's code is ready**. Do
+> **not** read fields or call game methods here — the game isn't warmed up yet. Do that work from
+> inside a hook (next lesson), which only fires while the game is actually running. Think of
+> `onLoad` as "set up constants and log," nothing that touches the game.
+
+Build it and you have a valid (if boring) mod. Now let's make it do something.
 
 ---
 
-## 5. Mixins
+## 5. Lesson 2 — Your first hook
 
-A mixin binds a Java class to one IL2CPP type:
+We want to run our code whenever the game's `CharacterMotor.UpdateMovement` method runs.
+`UpdateMovement` is called every frame while the player is running, so it's a good heartbeat.
 
 ```java
+package com.example.mymod;
+
+import android.util.Log;
+import dev.frostbite.api.At;
+import dev.frostbite.api.Inject;
+import dev.frostbite.api.Mixin;
+
 @Mixin(assembly = "Assembly-CSharp",
        namespace = "SYBO.RunnerCore.Character",
        targetClass = "CharacterMotor")
-public final class CharacterMotorMixin { /* injections and/or accessors */ }
+public final class CharacterMotorMixin {
+
+    @Inject(method = "UpdateMovement(self)", at = At.HEAD)
+    public void beforeUpdate(Object self) {
+        Log.i("MyMod", "UpdateMovement is about to run");
+    }
+}
 ```
 
-- `assembly` is the IL2CPP image name (usually `Assembly-CSharp`, or e.g.
-  `UnityEngine.CoreModule` for `Vector3`).
-- `namespace` may be empty (`""`) for a global type.
-- A mixin that declares **accessors** (§7) must be `public abstract` (Frostbite generates a
-  concrete subclass). A mixin with only `@Inject` methods can be `final`.
-- Frostbite creates **one instance per mixin** and registers it; see §9.
+Read it piece by piece:
+
+- `@Mixin(...)` — "this class is about the game's `CharacterMotor`."
+- `@Inject(method = "UpdateMovement(self)", at = At.HEAD)` — "run my method **before** the game's
+  `UpdateMovement`."
+- `public void beforeUpdate(Object self)` — your callback. **Callbacks always return `void`.**
+- `Object self` — the specific `CharacterMotor` object this call is happening on (like `this`
+  inside the game's method). Every instance-method hook gets `self` as its first parameter.
+
+`At.HEAD` means before; `At.TAIL` means after. Install the mod, play, filter logcat for `MyMod`,
+and you'll see the line every frame.
+
+That's a working hook. Everything else is learning **how to name methods precisely** and **what
+your callback can do**.
 
 ---
 
-## 6. Selectors — naming a method
+## 6. Lesson 3 — Selectors: naming a method
 
-A selector is the **canonical signature** of a method *within the mixin's assembly, namespace,
-and class*:
+A **selector** is how you point at one exact method. This is the single most important skill, so
+go slow.
+
+A game class can have many methods, and several with the same name but different parameters
+(**overloads**). To pick one, you write its **canonical signature**:
 
 ```
 MethodName(receiver[;ParamType[;ParamType...]])
 ```
 
-- `receiver` is the literal token `self` (instance method) or `static` (static method). It is
-  part of the signature, not an IL2CPP parameter.
-- Each `ParamType` is the canonical type name. System types are lowercased short names:
-  `void`, `boolean`, `int`, `long`, `float`, `double`, `string`. Everything else is its full
-  `Namespace.Name`, including enums and structs: `SYBO.RunnerCore.Character.MotorStateKind`,
-  `UnityEngine.Vector3`.
+- `receiver` is the literal word **`self`** (for an instance/non-static method) or **`static`**
+  (for a static method). This is not a real parameter — it's just telling Frostbite whether the
+  method belongs to an object or to the class.
+- After the receiver, list each real parameter's **type**, separated by `;`.
 
-Examples:
+Parameter types use short lowercase names for the common built-ins, and full `Namespace.Name` for
+everything else:
+
+| C# type         | write it as            |
+| --------------- | ---------------------- |
+| `void`          | `void`                 |
+| `bool`          | `boolean`              |
+| `int`           | `int`                  |
+| `long`          | `long`                 |
+| `float`         | `float`                |
+| `double`        | `double`               |
+| `string`        | `string`               |
+| anything else   | full name, e.g. `UnityEngine.Vector3`, `SYBO.RunnerCore.Character.MotorStateKind` |
+
+Examples (read each one out loud):
 
 ```
-UpdateMovement(self)
-ChangeLane(self;int)
-SwitchState(self;SYBO.RunnerCore.Character.MotorStateKind)
-Teleport(self;UnityEngine.Vector3)
-get_Working(static)
-Despawn(static;UnityEngine.Transform)
+UpdateMovement(self)                                 // instance method, no args
+ChangeLane(self;int)                                 // instance method, one int arg
+Jump(self;boolean)                                   // instance method, one bool arg
+SwitchState(self;SYBO.RunnerCore.Character.MotorStateKind)  // one enum arg
+Teleport(self;UnityEngine.Vector3)                   // one struct arg
+get_Working(static)                                  // static method, no args
+Despawn(static;UnityEngine.Transform)                // static method, one object arg
 ```
 
-**Finding selectors and field names.** Dump the game with a tool such as Il2CppDumper to see
-method names, parameter types, and field names (e.g. `_canAccelerate`, or a C# auto-property's
-backing field `<AllowInput>k__BackingField`). Then write the selector in the canonical form
-above. The native runtime logs the exact canonical signatures it enumerates per hooked class,
-which you can cross-check in logcat.
+> Note the `get_` prefix. C# **properties** like `bool CanJump { get; }` compile to methods named
+> `get_CanJump` / `set_CanJump`. That's why you hook `get_CanJump(self)`, not `CanJump`.
 
-**Exact vs regex.** The default is `SelectorMode.EXACT` (the selector must equal the canonical
-signature). For fuzzy matching use `mode = SelectorMode.REGEX`; the whole canonical signature
-must match (`Pattern.matches`), so escape literal parentheses and double the backslashes in a
-Java string:
+### How do I find the real names?
+
+The game won't tell you its method and field names while running — you discover them ahead of
+time by **dumping** the game once with a tool like **Il2CppDumper**. That produces a `dump.cs`
+listing every class, method (with parameter types), and field. You read it like a header file,
+then write the selector in the canonical form above. You only re-dump when the game updates.
+
+Field names come from the same dump. They look like `_canAccelerate`, or — for an auto-property's
+hidden storage — `<AllowInput>k__BackingField`.
+
+### Exact vs regex
+
+Default matching is **exact**: your selector string must equal the game's canonical signature.
+
+If you're unsure of the exact parameter types, use **regex** mode and match loosely. The whole
+canonical signature is matched with Java's `Pattern.matches`, so escape parentheses and double
+your backslashes:
 
 ```java
 @Inject(method = "ChangeLane\\(self;int\\)", at = At.HEAD, mode = SelectorMode.REGEX)
-public void beforeLane(Object self, int lane) { }
+public void onLane(Object self, int lane) { }
 ```
 
-A selector that matches **more than one** method is rejected (narrow it); **zero** matches also
-fail. Both are reported in logcat and the hook is skipped (the rest of the mod still loads).
+Two rules that save you from silent bugs:
+
+- If your selector matches **more than one** method, Frostbite refuses it (so it never guesses).
+  Narrow it.
+- If it matches **zero** methods, that fails too. Both are printed in logcat, and that single
+  hook is skipped — the rest of your mod still loads.
 
 ---
 
-## 7. Injection — `@Inject`
+## 7. Lesson 4 — Reading a method's arguments
 
-A hook runs your Java callback around a game method. Callbacks return `void`; what the callback
-*does* (reads args, overrides return, cancels, modifies args) is expressed through its
-parameters.
+Your callback's parameters mirror the game method's signature:
 
-### HEAD and TAIL
+1. If the target is an **instance** method (`self`), your **first** parameter is the object, typed
+   `Object` (or `Il2CppObject`). A **static** target has no such parameter.
+2. Then come the method's real arguments, **in order**, each as the matching Java type.
 
-```java
-@Inject(method = "UpdateMovement(self)", at = At.HEAD)
-public void before(Object self) { Log.i("Mod", "before"); }
-
-@Inject(method = "UpdateMovement(self)", at = At.TAIL)
-public void after(Object self) { Log.i("Mod", "after"); }
-```
-
-- `At.HEAD` runs **before** the original; `At.TAIL` runs **after** it.
-- **`At.TAIL` is only valid on `void` targets.** For a non-void method, use `At.HEAD` with a
-  return override.
-- `priority` (int, default 0) orders multiple hooks on the same method — higher runs first.
-
-### Parameters
-
-- For an **instance** target (`self`), the first callback parameter is the receiver, declared
-  as `Object` or `Il2CppObject`. A **static** target has no receiver parameter.
-- Declared IL2CPP arguments follow, in order. Each maps to a Java type per the table in §12
-  (object/struct arguments are `Object`/`Il2CppObject`; a struct is a boxed copy — read its
-  fields with an accessor or `Il2Cpp`).
-- A trailing control object (`CallbackInfo` or `CallbackInfoReturnable`) is optional for void
-  targets and required for return override (below).
+So for `ChangeLane(self;int)`:
 
 ```java
 @Inject(method = "ChangeLane(self;int)", at = At.HEAD)
-public void onLane(Object self, int lane) { /* lane is the requested lane */ }
-```
-
-### Override a return value (non-void)
-
-Add `CallbackInfoReturnable<T>` as the last parameter and call `setReturnValue` at HEAD. The
-original is skipped and your value is returned. `T` must match the target's return type; a
-struct return is a boxed `Il2CppObject` (see §8).
-
-```java
-@Inject(method = "get_CanJump(self)", at = At.HEAD)
-public void alwaysJump(Object self, CallbackInfoReturnable<Boolean> cir) {
-    cir.setReturnValue(Boolean.TRUE);           // infinite jump
+public void onLane(Object self, int lane) {
+    Log.i("MyMod", "player wants lane " + lane);   // self = the motor, lane = the argument
 }
 ```
 
-If you do not call `setReturnValue`, the original runs normally.
+The type mapping is exactly what you'd expect, with three things worth memorizing:
 
-### Cancel a void method (NOP)
+- **enums arrive as `int`** (their underlying number). Declare the parameter `int`.
+- **objects and strings** are `Object` (or `Il2CppObject`) — a handle to the game object.
+- **structs** (value types like `Vector3`) are also `Object`/`Il2CppObject` — a *boxed copy*. We
+  cover structs properly in Lesson 8.
 
-Add `CallbackInfo` as the last parameter and call `cancel()` at HEAD. The original never runs —
-a name-based NOP:
+Full table is in the [reference](#14-full-reference). `self` and arguments stay valid **only for
+the duration of that callback** — don't stash a game object and poke it ten seconds later.
+
+---
+
+## 8. Lesson 5 — The four powers of a hook
+
+A HEAD hook can do four things. You choose which by what parameters your callback declares. This
+is the heart of Frostbite.
+
+### Power 1 — Observe
+
+Just read `self` and the arguments. The original runs normally afterward. (Lesson 2 and 4.)
+
+### Power 2 — Replace the return value (for non-void methods)
+
+Add a `CallbackInfoReturnable<T>` as the **last** parameter. Call `setReturnValue(...)` at HEAD.
+The original method is **skipped** and your value is returned instead. `T` matches the method's
+return type.
 
 ```java
-@Inject(method = "ApplyGravity(self)", at = At.HEAD)
-public void noGravity(Object self, CallbackInfo ci) { ci.cancel(); }
+// get_CanJump returns bool. Force it to always say "yes" -> infinite jump.
+@Inject(method = "get_CanJump(self)", at = At.HEAD)
+public void alwaysCanJump(Object self, CallbackInfoReturnable<Boolean> cir) {
+    cir.setReturnValue(Boolean.TRUE);
+}
 ```
 
-### Modify the arguments (write-back)
-
-Declare a single `Arguments` parameter (instead of typed-per-argument parameters, after `self`)
-and set values at HEAD. The changes are passed to the original method and to later hooks.
-Index 0 is the first IL2CPP argument (not `self`).
+If you *don't* call `setReturnValue`, the original runs as usual. So you can decide conditionally:
 
 ```java
+@Inject(method = "get_IsGameOver(self)", at = At.HEAD)
+public void neverLose(Object self, CallbackInfoReturnable<Boolean> cir) {
+    cir.setReturnValue(Boolean.FALSE);   // the game can never think it's game over
+}
+```
+
+### Power 3 — Cancel a void method (NOP it)
+
+A `void` method has no return value, but you may still want to **stop it from running at all** —
+a classic "NOP." Add a `CallbackInfo` parameter and call `cancel()`.
+
+```java
+// ApplyGravity pulls the player down. NOP it -> no gravity, the player floats.
+@Inject(method = "ApplyGravity(self)", at = At.HEAD)
+public void noGravity(Object self, CallbackInfo ci) {
+    ci.cancel();     // the original ApplyGravity never runs
+}
+```
+
+(`CallbackInfoReturnable` is itself a `CallbackInfo`, so it can cancel too — `setReturnValue`
+both sets the value and cancels.)
+
+### Power 4 — Change the arguments (write-back)
+
+Sometimes you want the original to run, but with **different inputs**. Declare a single
+`Arguments` parameter (instead of listing each argument), and set values. Index `0` is the first
+real argument (not `self`). Your changes reach the original method and any later hooks.
+
+```java
+// Whatever lane the player swipes to, force it to the right lane (1).
 @Inject(method = "ChangeLane(self;int)", at = At.HEAD)
 public void forceRight(Object self, Arguments args) {
-    args.setInt(0, 1);                          // always change lane right
+    args.setInt(0, 1);
 }
 ```
 
-`Arguments` reads and writes every type: `getInt/setInt`, `getLong/setLong`,
-`getFloat/setFloat`, `getDouble/setDouble`, `getBool/setBool`, `getObject/setObject`
-(objects and structs as `Il2CppObject`). You may add a trailing `CallbackInfo` /
-`CallbackInfoReturnable` to also cancel or override the return.
+`Arguments` can read and write every type: `getInt/setInt`, `getLong/setLong`,
+`getFloat/setFloat`, `getDouble/setDouble`, `getBool/setBool`, `getObject/setObject`. You can add
+a trailing `CallbackInfo`/`CallbackInfoReturnable` after `Arguments` if you also want to
+cancel/override.
 
-### Static method injection
+### At.TAIL
 
-Use a `(static)` selector; the callback has no `self`:
+`At.TAIL` runs your callback **after** the original. Use it to observe results of side effects.
+**TAIL only works on `void` methods**, and TAIL callbacks do not get a return value — for a
+non-void method you influence the result at HEAD with Power 2.
+
+### Static methods
+
+Use a `(static)` selector. The callback has **no `self`** parameter — otherwise identical:
 
 ```java
 @Inject(method = "TriggerPoolBalancing(static)", at = At.HEAD)
-public void onTrigger() { Log.i("Mod", "pool balancing"); }
+public void onBalance() { Log.i("MyMod", "pool balancing ran"); }
 ```
 
-Return override on a static non-void target works the same way (add `CallbackInfoReturnable`).
+### Priority
+
+If several hooks target the same method, `@Inject(..., priority = N)` orders them — higher `N`
+runs first.
 
 ---
 
-## 8. Accessors — read/write fields and call methods
+## 9. Lesson 6 — Accessors: fields and method calls
 
-Accessors are **`public abstract` methods** on an `abstract @Mixin` class; Frostbite generates
-their bodies. They target members of the mixin's IL2CPP type (except the field/method name is
-the annotation value).
+Hooks react to the game. **Accessors** let you *actively* read/write a field or call a method
+whenever you want.
 
-### Instance fields — `@AccessField`
+An accessor is an **abstract method** you declare; Frostbite writes the body. Because the class
+now has abstract methods, **a mixin with accessors must be `public abstract`** (not `final`).
+
+### Read and write an instance field — `@AccessField`
 
 ```java
-@AccessField(value = "_canAccelerate", mode = AccessMode.GETTER)
-public abstract boolean getCanAccelerate(Object self);
+@Mixin(assembly = "Assembly-CSharp", namespace = "SYBO.RunnerCore.Character",
+       targetClass = "CharacterMotor")
+public abstract class CharacterMotorMixin {
 
-@AccessField(value = "_canAccelerate", mode = AccessMode.SETTER)
-public abstract void setCanAccelerate(Object self, boolean value);
+    @AccessField(value = "_canAccelerate", mode = AccessMode.GETTER)
+    public abstract boolean getCanAccelerate(Object motor);   // read motor._canAccelerate
+
+    @AccessField(value = "_canAccelerate", mode = AccessMode.SETTER)
+    public abstract void setCanAccelerate(Object motor, boolean value);  // write it
+}
 ```
 
-A getter takes the instance and returns the value; a setter takes the instance and the new
-value and returns void.
+- A **getter** takes the object and returns the field's value.
+- A **setter** takes the object and the new value, returns `void`.
+- `value` is the field name from your dump. `mode` is `GETTER` or `SETTER`.
 
 ### Static fields — `@AccessStaticField`
 
-No instance parameter:
+Same, but **no object parameter** (static fields belong to the class, not an instance):
 
 ```java
 @AccessStaticField(value = "BalancingBudgetMS", mode = AccessMode.GETTER)
@@ -296,25 +460,100 @@ public abstract int getBudget();
 public abstract void setBudget(int value);
 ```
 
-`const` fields are **readable but not writable** (a setter on a const is a no-op).
+> `const` fields can be **read but not written** (a setter on a constant silently does nothing).
 
-### Methods — `@AccessMethod`
+### Call a method — `@AccessMethod`
 
-The selector picks instance vs static via `self`/`static`. An instance invoker takes the
-instance first; the remaining Java parameters map to the IL2CPP arguments in order.
+The selector (same format as hooks) picks the method; `self`/`static` says instance or static.
+For an instance method, the first parameter is the object; the rest are the method's arguments.
 
 ```java
 @AccessMethod("ChangeLane(self;int)")
-public abstract boolean changeLane(Object self, int lane);
+public abstract boolean changeLane(Object motor, int lane);   // call motor.ChangeLane(lane)
+
+@AccessMethod("get_ForwardSpeedTarget(self)")
+public abstract float speed(Object motor);                    // call motor.get_ForwardSpeedTarget()
 
 @AccessMethod("get_Working(static)")
-public abstract boolean working();
+public abstract boolean working();                            // call a static method
 ```
 
-### Structs / value types
+Now you can call the game's own methods from your Java code. Inside a hook you have `self`, so you
+can do, e.g., `setCanAccelerate(self, true)` every frame.
 
-A value-type field, argument, or return is a **boxed `Il2CppObject`**. Read its fields with
-field accessors on the struct's own type. For example, a `Vector3` returned by a method:
+---
+
+## 10. Lesson 7 — The `Il2Cpp` helper and the `Mixins` registry
+
+### Calling accessors from another class — `Mixins`
+
+Frostbite makes **one instance of each mixin** and registers it. To use a mixin's accessors from
+anywhere (even a different mixin), ask for it:
+
+```java
+CharacterMotorMixin motor = Mixins.get(CharacterMotorMixin.class);
+boolean working = Mixins.get(PoolManagerMixin.class).working();
+```
+
+For an **instance** accessor you still need the target object (get it from a callback's `self`,
+stash it in a field, or fetch it from a static singleton accessor). For **static** accessors you
+don't need any object.
+
+### The annotation-free way — `Il2Cpp`
+
+Everything accessors do, you can also do inline without declaring abstract methods, using the
+`Il2Cpp` helper plus a `Target(assembly, namespace, class, member)`:
+
+```java
+Il2Cpp.Target canAccel = new Il2Cpp.Target(
+        "Assembly-CSharp", "SYBO.RunnerCore.Character", "CharacterMotor", "_canAccelerate");
+
+boolean v = Il2Cpp.getBool(self, canAccel);          // read a field
+Il2Cpp.setBool(self, canAccel, true);                // write a field
+
+Il2Cpp.Target jump = new Il2Cpp.Target(
+        "Assembly-CSharp", "SYBO.RunnerCore.Character", "CharacterMotor", "Jump(self;boolean)");
+boolean jumped = Il2Cpp.invokeBool(self, jump, Boolean.TRUE);   // call a method
+```
+
+- Field helpers: `getInt/getLong/getFloat/getDouble/getBool/getObject` and matching `setX`.
+- Invoke helpers: `invokeVoid/invokeInt/invokeLong/invokeFloat/invokeDouble/invokeBool/invokeObject(self, target, args...)`.
+- For a **static** member, pass `null` as `self`.
+- For a field `member` is the field name; for `invoke` it's a selector.
+
+Annotations (`@Access*`) are cleaner and type-checked; `Il2Cpp` is handy for one-offs or when you
+need to touch a class you don't have a mixin for (like `Vector3` fields).
+
+---
+
+## 11. Lesson 8 — Objects and structs
+
+This is the only genuinely new concept. Spend a minute here.
+
+### `Il2CppObject`
+
+Any game object that crosses into your Java code is an **`Il2CppObject`** — a thin handle holding
+the object's native memory address. `self` is one. A method that returns a game object gives you
+one. You can declare such parameters/returns as `Object` or `Il2CppObject`.
+
+**Lifetime:** the address is valid **only during the current callback** unless the game itself
+keeps the object alive. Don't save an `Il2CppObject` from one frame and poke it many frames later;
+by then it may be gone.
+
+### Value types (structs) — the boxing rule
+
+C# has two flavors of type:
+
+- **Reference types** (classes, strings, arrays): the game passes a *handle* (a pointer). Simple.
+- **Value types / structs** (`Vector3`, `Color`, `Quaternion`, enums are a special case): the
+  game passes the *whole value by copy*, not a handle.
+
+When a **struct** crosses into Java, Frostbite **boxes** it — wraps the copied value into a
+temporary `Il2CppObject` so you have something to hold. So a `Vector3` argument or return arrives
+as an `Il2CppObject`.
+
+To read a struct's fields (like `Vector3.x`), you read **fields of that struct type** out of the
+boxed object. Make a tiny mixin for the struct, or use `Il2Cpp`:
 
 ```java
 @Mixin(assembly = "UnityEngine.CoreModule", namespace = "UnityEngine", targetClass = "Vector3")
@@ -326,173 +565,233 @@ public abstract class VectorMixin {
 }
 ```
 
-Object and struct accessor types must be declared as `Object` or `Il2CppObject`.
-
----
-
-## 9. Reaching a mixin from elsewhere — `Mixins`
-
-Frostbite registers one instance per mixin. Call its accessors from anywhere:
+Now, given a boxed `Vector3`:
 
 ```java
-CharacterMotorMixin motor = Mixins.get(CharacterMotorMixin.class);
-int runTime = motor.getRunTime(self);
+Il2CppObject pos = ...;                       // e.g. returned by a position getter
+VectorMixin v = Mixins.get(VectorMixin.class);
+float px = v.x(pos), py = v.y(pos), pz = v.z(pos);
 ```
 
-Accessor-only mixins (no `@Inject`) are instantiated and registered too. For an **instance**
-member you still need the target object; obtain it from a callback's `self`, stash it, or get
-it from a static singleton accessor.
-
----
-
-## 10. The `Il2Cpp` helper (no annotations)
-
-The same capabilities are available directly, without declaring accessor methods, through
-`Il2Cpp` and an `Il2Cpp.Target(assembly, namespace, class, member)`:
+And you can **return a struct** from an override — supply a boxed struct:
 
 ```java
-Il2Cpp.Target speed = new Il2Cpp.Target("Assembly-CSharp",
-        "SYBO.RunnerCore.Character", "CharacterMotor", "get_ForwardSpeedTarget(self)");
-float v = Il2Cpp.invokeFloat(motor, speed);                       // invoke
-float x = Il2Cpp.getFloat(vec3, new Il2Cpp.Target(..., "x"));     // field read
-Il2Cpp.setBool(motor, new Il2Cpp.Target(..., "_canAccelerate"), true);
+@Inject(method = "get_LastImpactVelocity(self)", at = At.HEAD)
+public void zeroImpact(Object self, CallbackInfoReturnable<Object> cir) {
+    cir.setReturnValue(Mixins.get(VectorMixin.class).one());   // force the Vector3 return
+}
 ```
 
-Methods: `getInt/getLong/getFloat/getDouble/getBool/getObject`, matching `setX`, and
-`invokeVoid/invokeInt/invokeLong/invokeFloat/invokeDouble/invokeBool/invokeObject(self, target,
-args...)`. Pass `null` as `self` for a static member. `member` is a field name (for fields) or
-a canonical selector (for `invoke`).
+Rule of thumb: **if the C# type is a struct, treat it as an `Il2CppObject` and read its fields.**
+Object/struct accessor and callback types must be declared `Object` or `Il2CppObject`.
 
 ---
 
-## 11. `Il2CppObject`
+## 12. Lesson 9 — Build a real cheat
 
-Any game object or boxed struct crossing into Java is an `Il2CppObject` wrapping a native
-address (`nativeAddress()`). **The address is valid only during the current callback** unless
-you keep the object alive through the game's own references. Do not store a raw `Il2CppObject`
-and use it many frames later unless you know the game still holds that object.
+Let's assemble a "Subway Tools" cheat menu's worth of behavior, using every power. Read the
+comments — each line is one thing you learned.
 
----
+```java
+package com.example.mymod;
 
-## 12. Type reference
+import android.util.Log;
+import dev.frostbite.api.*;
 
-| C# / IL2CPP type        | Java type (callback arg / accessor)      | Return override value          |
-| ----------------------- | ---------------------------------------- | ------------------------------ |
-| `int`, short/byte/char* | `int`                                    | `Integer`                      |
-| `long`                  | `long`                                   | `Long`                         |
-| `float`                 | `float`                                  | `Float`                        |
-| `double`                | `double`                                 | `Double`                       |
-| `bool`                  | `boolean`                                | `Boolean`                      |
-| enum                    | `int` (its underlying value)             | `Integer`                      |
-| class / string / array  | `Object` or `Il2CppObject`               | `Il2CppObject` (or `null`)     |
-| struct / value type     | `Object`/`Il2CppObject` (boxed copy)     | `Il2CppObject` (boxed)         |
+@FrostbiteMod(id = "subway-tools", version = "1.0.0")
+public final class SubwayToolsMod implements ModInitializer {
+    @Override public void onLoad(ModContext ctx) { ctx.log("Subway Tools loaded"); }
+}
 
-\* smaller integer types arrive widened to `int`.
+@Mixin(assembly = "Assembly-CSharp", namespace = "SYBO.RunnerCore.Character",
+       targetClass = "CharacterMotor")
+abstract class CharacterMotorMixin {
 
-All of the above work for fields, method invocation, and injection arguments/returns, for both
-static and instance members, and for any number of arguments.
+    // --- accessors we'll use from our hooks ---
+    @AccessMethod("SetAccelerate(self;boolean)")
+    public abstract void setAccelerate(Object motor, boolean on);
+
+    @AccessMethod("set_ColliderEnable(self;boolean)")
+    public abstract void setCollider(Object motor, boolean on);
+
+    @AccessMethod("get_ForwardSpeedTarget(self)")
+    public abstract float speed(Object motor);
+
+    // --- runs every frame: keep accelerating, god-mode the collider ---
+    @Inject(method = "UpdateMovement(self)", at = At.HEAD)
+    public void each(Object self) {
+        setAccelerate(self, true);     // Power: call their method
+        setCollider(self, false);      // god mode: no obstacle collisions
+    }
+
+    // --- infinite jump: override a bool return ---
+    @Inject(method = "get_CanJump(self)", at = At.HEAD)
+    public void jump(Object self, CallbackInfoReturnable<Boolean> cir) {
+        cir.setReturnValue(Boolean.TRUE);
+    }
+
+    // --- no gravity: NOP a void method ---
+    @Inject(method = "ApplyGravity(self)", at = At.HEAD)
+    public void grav(Object self, CallbackInfo ci) {
+        ci.cancel();
+    }
+
+    // --- always dodge right: rewrite an argument ---
+    @Inject(method = "ChangeLane(self;int)", at = At.HEAD)
+    public void lane(Object self, Arguments a) {
+        a.setInt(0, 1);
+    }
+
+    // --- log speed occasionally ---
+    private long frames;
+    @Inject(method = "UpdateMovement(self)", at = At.TAIL)
+    public void tick(Object self) {
+        if (++frames % 300 == 1) Log.i("MyMod", "speed=" + speed(self));
+    }
+}
+```
+
+That's a complete, powerful mod. Notice you never wrote a loop over the game, never found an
+address, never touched C++. You described methods and fields by name; Frostbite did the rest.
+
+**Everything you can ever do is a combination of these moves:** hook a method (HEAD/TAIL), observe
+or override its return or cancel it or edit its args, and read/write fields and call methods via
+accessors or `Il2Cpp`. There is no secret fifth thing — once these click, you can write *any*
+Frostbite mod.
 
 ---
 
 ## 13. Build, install, run
 
-1. **Build the mod:** `gradlew packageFrostbite` → `build/outputs/frostbite/<name>.frostbite`
-   (or `assembleDebug` for a full mod APK). The processor writes `META-INF/frostbite/mod.json`,
-   `hooks.json`, and `mixins.json` into the output.
-2. **Patch the game** (desktop app, *01 Install Frostbite*): select the original game APK and
-   `frostbite-runtime.zip`, enter the launch Activity, choose an output path, build. This
-   embeds the runtime and patches the launcher.
-3. **Add mods** (desktop app, *02 Mods*): add your `.frostbite` (or a legacy mod APK), choose an
-   output, build the final APK. It rewrites `assets/frostbite/mods/index.json`.
-4. **Install** the final APK (`adb install`). If a copy signed with a different key is
-   installed, uninstall it first (this may erase its data).
-5. **Observe:** filter logcat for `Frostbite` and your own tag. On startup you will see the mod
-   load and `Installed N IL2CPP hook(s)`; unsupported hooks are logged as skipped.
+1. **Build the mod:** `gradlew packageFrostbite` → `build/outputs/frostbite/<name>.frostbite`.
+   (The annotation processor writes `mod.json`, `hooks.json`, and `mixins.json` into it.)
+2. **Patch the game** with the desktop app, tab *01 Install Frostbite*: pick the original game
+   APK and `frostbite-runtime.zip`, type the launch Activity, choose an output, Build. This
+   embeds the runtime and patches the game's startup.
+3. **Add your mod** in tab *02 Mods*: add the `.frostbite`, choose an output, Build the final APK.
+4. **Install** the final APK (`adb install`). If a copy with a different signature is installed,
+   uninstall it first (may wipe its data).
+5. **Watch logcat** (`adb logcat | grep -i frostbite`). On launch you'll see your mod load and
+   `Installed N IL2CPP hook(s)`. Any hook it couldn't resolve is logged as skipped — the rest
+   still run.
+
+Full pipeline detail: [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ---
 
-## 14. Full example
+## 14. Full reference
 
-```java
-@FrostbiteMod(id = "subway-tools", version = "1.0.0")
-public final class SubwayToolsMod implements ModInitializer {
-    @Override public void onLoad(ModContext context) { context.log("Subway Tools loaded"); }
-}
+### Annotations
 
-@Mixin(assembly = "Assembly-CSharp", namespace = "SYBO.RunnerCore.Character",
-       targetClass = "CharacterMotor")
-public abstract class CharacterMotorMixin {
-    // accessors
-    @AccessMethod("SetAccelerate(self;boolean)")
-    public abstract void setAccelerate(Object motor, boolean on);
-    @AccessMethod("get_ForwardSpeedTarget(self)")
-    public abstract float speed(Object motor);
+| Annotation | On | Meaning |
+| --- | --- | --- |
+| `@FrostbiteMod(id, version)` | the entrypoint class | marks your mod; `id` is unique |
+| `@Mixin(assembly, namespace, targetClass)` | a class | binds it to one game class |
+| `@Inject(method, at, mode?, priority?)` | a `void` method | a hook; `at` = `HEAD`/`TAIL` |
+| `@AccessField(value, mode)` | abstract method | instance field get/set |
+| `@AccessStaticField(value, mode)` | abstract method | static field get/set |
+| `@AccessMethod(selector)` | abstract method | call an instance/static method |
 
-    // cheats
-    @Inject(method = "UpdateMovement(self)", at = At.HEAD)
-    public void each(Object self) { setAccelerate(self, true); }          // max accel
+Enums: `At.HEAD` / `At.TAIL`; `SelectorMode.EXACT` / `SelectorMode.REGEX`;
+`AccessMode.GETTER` / `AccessMode.SETTER`.
 
-    @Inject(method = "get_CanJump(self)", at = At.HEAD)
-    public void jump(Object self, CallbackInfoReturnable<Boolean> cir) {  // infinite jump
-        cir.setReturnValue(Boolean.TRUE);
-    }
+### Callback parameter shapes (for `@Inject`)
 
-    @Inject(method = "ApplyGravity(self)", at = At.HEAD)
-    public void grav(Object self, CallbackInfo ci) { ci.cancel(); }       // no gravity (NOP)
+- Observe: `(self?, typed args...)`
+- Override return: `(self?, typed args..., CallbackInfoReturnable<T>)` — call `setReturnValue`
+- NOP a void: `(self?, typed args..., CallbackInfo)` — call `cancel`
+- Edit args: `(self?, Arguments)` — call `setX`; may add a trailing `CallbackInfo`/CIR
 
-    @Inject(method = "ChangeLane(self;int)", at = At.HEAD)
-    public void lane(Object self, Arguments a) { a.setInt(0, 1); }        // always go right
-}
-```
+`self` is present for instance (`self`) targets and absent for static (`static`) targets.
 
-See the [sample README](../../frostbite-sample/README.md) for a build that also demonstrates
-enums, static-method hooks, struct values, and struct-return override.
+### Type mapping
+
+| C# / IL2CPP type               | Java type you declare           | Value for `setReturnValue` |
+| ------------------------------ | ------------------------------- | -------------------------- |
+| `int`, short, byte, char       | `int`                           | `Integer`                  |
+| `long`                         | `long`                          | `Long`                     |
+| `float`                        | `float`                         | `Float`                    |
+| `double`                       | `double`                        | `Double`                   |
+| `bool`                         | `boolean`                       | `Boolean`                  |
+| enum                           | `int` (underlying value)        | `Integer`                  |
+| class / string / array         | `Object` / `Il2CppObject`       | `Il2CppObject` or `null`   |
+| struct / value type            | `Object` / `Il2CppObject` (boxed) | `Il2CppObject` (boxed)   |
+
+All types work for fields, invocation, and injection, static or instance, with any number of
+arguments.
 
 ---
 
-## 15. Limitations and edge cases
+## 15. Every limitation and edge case
 
-- **Injection targets must be concrete instance/static methods.** Hooking a method that only
-  exists as an **abstract** declaration (no body) will abort the game; hook the concrete
-  override instead.
-- **Value-type (struct) support** is complete for fields, invocation, and injection
-  arguments/returns on `arm64-v8a`. Struct **return override** is supported; struct reads/writes
-  go through boxed `Il2CppObject`.
+- **Only concrete methods can be hooked.** If a method exists only as an **abstract** declaration
+  (no body), hooking it crashes the game. Hook the concrete class that implements it.
+- **`At.TAIL` is `void`-only**, and TAIL callbacks don't receive the return value. Influence
+  non-void results at HEAD.
 - **`const` fields are read-only.**
-- **Overloads resolve by argument count** for `@AccessMethod` invocation. Two overloads with the
-  same arity are ambiguous; use the exact selector form, which also encodes parameter types.
-- **Ambiguous or zero-match selectors are skipped** with a warning (narrow the selector).
-- **`At.TAIL` only on void targets.** TAIL callbacks do not receive the return value.
-- **`Il2CppObject` addresses are per-callback** (see §11).
-- **Hook capacity:** up to 32 distinct hooked method addresses per process for the fixed path
-  and 32 for the universal path.
-- **No live unload** — hooks persist for the life of the game process.
-- **Architecture:** `arm64-v8a` is the fully validated path. The `armeabi-v7a` (32-bit)
-  universal trampoline is implemented but **experimental and unverified on a real 32-bit
-  target**; the library still loads and simpler hooks work. No x86 library is produced.
-- **Engine version:** the native runtime is pinned to a Unity IL2CPP layout (`UNITY_VER`,
-  default 2022.2 / `222`). A game on a different Unity version needs the runtime rebuilt with a
-  matching selector.
-- **Not provided:** an in-game menu/overlay, ESP/drawing, raw arbitrary-address memory
-  read/write, and arbitrary mid-function instruction patching. Frostbite hooks at method
-  boundaries and accesses members by name.
+- **Overloads:** `@AccessMethod` picks a method by argument **count**; two overloads with the same
+  arity are ambiguous. Use the full selector (it encodes parameter types).
+- **Ambiguous / zero-match selectors** are skipped with a warning — narrow them.
+- **`Il2CppObject` handles are per-callback** — don't reuse them across frames unless the game
+  still holds the object.
+- **Struct reads must come from the boxed object** the accessor/invoke returned. Reading a struct
+  field from the wrong source gives garbage.
+- **Hook capacity:** up to 32 distinct hooked method addresses for the simple path and 32 for the
+  universal (complex-signature) path, per process.
+- **No live unload** — hooks last for the whole game process.
+- **CPU architecture:** `arm64-v8a` is fully supported and tested. The `armeabi-v7a` (32-bit)
+  universal path is implemented but **experimental and unverified on a real 32-bit device**; the
+  library still loads and simple hooks work there. No x86 library is produced — an x86 emulator
+  must translate ARM.
+- **Unity version:** the native runtime is pinned to one IL2CPP memory layout (default Unity
+  2022.2). A game on a very different Unity version needs the runtime rebuilt to match.
+- **Not included:** an on-screen mod-menu/overlay, ESP/drawing, raw arbitrary-address memory
+  read/write, and mid-function instruction patching. Frostbite works at method boundaries and by
+  name. (A menu/toggle layer can be built *on top* of Frostbite in your mod.)
 
 ---
 
 ## 16. Troubleshooting
 
-| Symptom | Cause / fix |
+| You see… | What it means / fix |
 | --- | --- |
-| `Skipping hook … matched N methods` | Selector is ambiguous (N>1) or absent (N=0). Narrow or correct it against a dump. |
-| `Could not hook …` | Signature unsupported on this ABI, or Dobby failed. Check the type and arity. |
-| Callback never fires | The game did not reach that method; confirm it runs, and that the assembly/namespace/class/signature match this game version. |
-| Game aborts on launch | Likely an abstract-method hook, or a wrong Unity-version runtime. |
-| `Frostbite IL2CPP backend not installed` | An accessor/invoke ran before IL2CPP was ready — call it from inside a callback, not `onLoad`. |
-| APK install signature mismatch | A differently signed copy is installed; uninstall it first. |
-| No mod loads | The final APK must come from the Mods tab (with `index.json` listing your mod), not the bare game APK. |
-| Garbled struct field values | Reading a struct field from a non-boxed source; read struct fields from the boxed `Il2CppObject` the accessor/invoke returned. |
+| `Skipping hook … matched N methods` | Selector matched N≠1 methods. Narrow it (exact types) or fix a typo, checking a dump. |
+| `Could not hook …` | The signature isn't supported on this ABI, or Dobby failed. Check the types/arity. |
+| Callback never fires | The game didn't reach that method, or the assembly/namespace/class/signature don't match this game version. |
+| Game crashes immediately on launch | Usually an abstract-method hook, or the runtime doesn't match the game's Unity version. |
+| `Frostbite IL2CPP backend not installed` | You called an accessor/invoke too early (e.g. in `onLoad`). Only call from inside a hook. |
+| `signatures do not match` on install | A differently signed copy is installed; uninstall it first. |
+| Nothing loads at all | The final APK must come from the **Mods** tab (which writes `index.json`), not the bare patched game APK. |
+| Garbled numbers from a struct field | You read the field from a non-boxed source; read struct fields from the `Il2CppObject` the accessor/invoke returned. |
 
 ---
 
-Build with JDK 27 and Android SDK 37; Android mod source and bytecode target Java 17. Mod
-authors never write C++.
+## 17. Glossary
+
+- **IL2CPP** — Unity's mode that compiles C# to native ARM code (`libil2cpp.so`). The game you're
+  modding.
+- **Assembly** — a named bundle of classes, e.g. `Assembly-CSharp` (the game's own code) or
+  `UnityEngine.CoreModule` (engine types like `Vector3`).
+- **Mixin** — your Java class, tagged `@Mixin`, that targets one game class.
+- **Hook / injection** — your callback run before (`HEAD`) or after (`TAIL`) a game method.
+- **Selector** — the canonical signature string naming one method, e.g. `ChangeLane(self;int)`.
+- **`self`** — the game object a hook/accessor acts on (the game method's `this`).
+- **Accessor** — an abstract method Frostbite implements to read/write a field or call a method.
+- **`Il2CppObject`** — a Java handle to a game object (or a boxed struct); valid for the current
+  callback.
+- **Boxing** — wrapping a copied struct value into an `Il2CppObject` so Java can hold it.
+- **`CallbackInfo` / `CallbackInfoReturnable<T>`** — control objects to cancel a void method or
+  replace a return value.
+- **`Arguments`** — a control object to read and rewrite a method's arguments.
+- **`Mixins`** — the registry; `Mixins.get(SomeMixin.class)` returns the live mixin instance.
+- **`Il2Cpp`** — the annotation-free helper for fields and method calls via `Il2Cpp.Target`.
+- **BNM / Dobby** — the native libraries Frostbite uses to resolve names and install hooks. You
+  never call them directly.
+- **`.frostbite`** — your packaged mod (DEX + manifests + any ARM libs), the thing you install.
+
+---
+
+You now know the whole model: name a class with `@Mixin`, run code around its methods with
+`@Inject` (observe, override, cancel, or edit args), and read/write its fields and call its
+methods with accessors or `Il2Cpp`. Everything else is just picking the right name and the right
+power. Go write mods.
