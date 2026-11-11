@@ -14,6 +14,7 @@ import dev.frostbite.api.Il2CppObject;
 import dev.frostbite.api.Inject;
 import dev.frostbite.api.Mixin;
 import dev.frostbite.api.Mixins;
+import dev.frostbite.api.Persistent;
 
 /**
  * Subway Tools: a working cheat suite for {@code SYBO.RunnerCore.Character.CharacterMotor}
@@ -35,6 +36,10 @@ import dev.frostbite.api.Mixins;
 public abstract class CharacterMotorMixin {
     private static final String TAG = "FrostbiteSample";
     private long frames;
+
+    // The live motor captured past its callback: taken once in a HEAD hook, then reused from
+    // a later frame to edit that same instance. A weak handle, so it reports when it dies.
+    private Persistent capturedMotor;
 
     // Fields on the boxed Vector3 (a value type) returned by worldPos().
     private static final Il2Cpp.Target VEC3_X = new Il2Cpp.Target("UnityEngine.CoreModule", "UnityEngine", "Vector3", "x");
@@ -88,6 +93,11 @@ public abstract class CharacterMotorMixin {
     // ---- cheats applied every frame ----
     @Inject(method = "UpdateMovement(self)", at = At.HEAD)
     public void applyCheats(Object self) {
+        // Capture this motor once so other hooks can edit it on a later frame.
+        if (capturedMotor == null) {
+            capturedMotor = ((Il2CppObject) self).persist();
+            Log.i(TAG, "[SubwayTools] captured motor for later use");
+        }
         setCanAccelerate(self, true);
         setAccelerate(self, true);
         setDisableBoundaryImpact(self, true);
@@ -105,6 +115,19 @@ public abstract class CharacterMotorMixin {
             Il2CppObject iv = lastImpactVelocity(self);
             Log.i(TAG, "[SubwayTools] struct-return override LastImpactVelocity=("
                     + Il2Cpp.getFloat(iv, VEC3_X) + "," + Il2Cpp.getFloat(iv, VEC3_Y) + "," + Il2Cpp.getFloat(iv, VEC3_Z) + ")");
+
+            // Persistence proof: this is a LATER callback than the frame-1 capture. Resolve the
+            // stashed handle, confirm it points at the same live motor as this frame's self, and
+            // edit that instance through the resolved reference (not self).
+            Il2CppObject stashed = capturedMotor.get();
+            if (stashed != null) {
+                boolean same = stashed.nativeAddress() == ((Il2CppObject) self).nativeAddress();
+                setCanAccelerate(stashed, true);   // edit the captured instance, not self
+                Log.i(TAG, "[SubwayTools] persisted self still alive=" + capturedMotor.isAlive()
+                        + " sameInstance=" + same + " speedViaStashed=" + speed(stashed));
+            } else {
+                Log.i(TAG, "[SubwayTools] persisted self was collected");
+            }
 
             Log.i(TAG, "[SubwayTools] speed=" + speed(self) + " jumpCount=" + jumpCount(self)
                     + " grounded=" + grounded(self) + " canAccelerate=" + canAccelerate(self)
