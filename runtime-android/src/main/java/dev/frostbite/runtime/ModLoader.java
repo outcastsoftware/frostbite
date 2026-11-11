@@ -50,13 +50,29 @@ public final class ModLoader {
             return Collections.emptyList();
         }
         requireSchema(index, "mod index");
-        JSONArray names = index.getJSONArray("mods");
+        // Each entry is either a bare "name.frostbite" string (back-compat) or an object
+        // {"file":"name.frostbite","enabled":true}. Array order is load order (and the tie-break
+        // for hook priority). Disabled mods stay embedded but are not loaded.
+        JSONArray entries = index.getJSONArray("mods");
         List<LoadedMod> loaded = new ArrayList<>();
         Set<String> ids = new HashSet<>();
-        for (int i = 0; i < names.length(); i++) {
-            String name = names.getString(i);
+        for (int i = 0; i < entries.length(); i++) {
+            Object raw = entries.get(i);
+            String name;
+            boolean enabled;
+            if (raw instanceof JSONObject entry) {
+                name = entry.getString("file");
+                enabled = entry.optBoolean("enabled", true);
+            } else {
+                name = entries.getString(i);
+                enabled = true;
+            }
             if (!name.matches("[a-zA-Z0-9][a-zA-Z0-9._-]*\\.(?:frostbite|frostmod)") ||
                     name.contains("..")) throw new IOException("Unsafe mod package name: " + name);
+            if (!enabled) {
+                Log.i(TAG, "Skipping disabled mod: " + name);
+                continue;
+            }
             LoadedMod mod = loadOne(name);
             if (!ids.add(mod.id())) throw new IOException("Duplicate Frostbite mod ID: " + mod.id());
             loaded.add(mod);

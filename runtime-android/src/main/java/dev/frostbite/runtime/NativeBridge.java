@@ -17,6 +17,8 @@ import java.util.Set;
 public final class NativeBridge {
     private static final String TAG = "Frostbite";
     private static List<HookDeclaration> declarations = Collections.emptyList();
+    // modId -> its position in the index (load order); earlier mods win hook-priority ties.
+    private static Map<String, Integer> modOrder = Collections.emptyMap();
     private static volatile boolean ready;
     private static boolean installed;
 
@@ -24,8 +26,13 @@ public final class NativeBridge {
 
     static synchronized void initialize(List<LoadedMod> mods) {
         List<HookDeclaration> all = new ArrayList<>();
-        for (LoadedMod mod : mods) all.addAll(mod.hooks());
+        Map<String, Integer> order = new HashMap<>();
+        for (LoadedMod mod : mods) {
+            order.putIfAbsent(mod.id(), order.size());
+            all.addAll(mod.hooks());
+        }
         declarations = Collections.unmodifiableList(all);
+        modOrder = Collections.unmodifiableMap(order);
         System.loadLibrary("frostbite");
         Il2Cpp.install(new Il2Cpp.Backend() {
             @Override public long get(long self, String asm, String ns, String cls, String field, char abi) {
@@ -112,6 +119,8 @@ public final class NativeBridge {
         }
         resolved.sort(Comparator.comparingLong((HookResolver.ResolvedHook h) -> h.method().address())
                 .thenComparing(h -> -h.hook().priority())
+                // Reorder in the mod index breaks priority ties: earlier mod runs first.
+                .thenComparingInt(h -> modOrder.getOrDefault(h.hook().modId(), Integer.MAX_VALUE))
                 .thenComparing(h -> h.hook().modId())
                 .thenComparing(h -> h.hook().callback().getName()));
         CallbackDispatcher.register(resolved);

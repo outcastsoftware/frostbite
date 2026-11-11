@@ -5,7 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 
-public record AndroidSdkTools(Path sdk, Path buildTools, Path zipalign, Path apksignerJar, Path d8Jar) {
+public record AndroidSdkTools(Path sdk, Path buildTools, Path zipalign, Path apksignerJar,
+                              Path d8Jar, Path aapt) {
     public static AndroidSdkTools find() throws IOException {
         String value = System.getenv("ANDROID_HOME");
         if (value == null || value.isBlank()) value = System.getenv("ANDROID_SDK_ROOT");
@@ -25,8 +26,19 @@ public record AndroidSdkTools(Path sdk, Path buildTools, Path zipalign, Path apk
             if (!Files.isRegularFile(zipalign) || !Files.isRegularFile(apksigner) ||
                     !Files.isRegularFile(d8))
                 throw new IOException("Selected Android SDK build-tools are incomplete: " + buildTools);
-            return new AndroidSdkTools(sdk, buildTools, zipalign, apksigner, d8);
+            // aapt is only needed for launch-activity detection; tolerate its absence.
+            Path aapt = firstExisting(buildTools, isWindows()
+                    ? new String[]{"aapt.exe", "aapt2.exe"} : new String[]{"aapt", "aapt2"});
+            return new AndroidSdkTools(sdk, buildTools, zipalign, apksigner, d8, aapt);
         }
+    }
+
+    private static Path firstExisting(Path dir, String[] names) {
+        for (String name : names) {
+            Path candidate = dir.resolve(name);
+            if (Files.isRegularFile(candidate)) return candidate;
+        }
+        return null;
     }
 
     private static boolean isWindows() {

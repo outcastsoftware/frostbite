@@ -3,8 +3,10 @@ plugins {
 }
 
 allprojects {
-    group = 'dev.frostbite'
-    version = '0.1.0-SNAPSHOT'
+    // JitPack publishes modules as com.github.outcastsoftware.frostbite:<module>:<tag>.
+    group = 'com.github.outcastsoftware.frostbite'
+    // JitPack passes -Pversion=<tag>; locally the project version is "unspecified", so default it.
+    if (version == 'unspecified') version = '0.1.0-SNAPSHOT'
     repositories { google(); mavenCentral() }
 }
 

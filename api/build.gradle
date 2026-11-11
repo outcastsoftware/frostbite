@@ -1,4 +1,6 @@
-plugins { id 'java-library' }
+plugins { id 'java-library'; id 'maven-publish' }
 
 java { toolchain { languageVersion = JavaLanguageVersion.of(27) } }
 tasks.withType(JavaCompile).configureEach { options.release = 17 }
+
+publishing { publications { maven(MavenPublication) { from components.java } } }

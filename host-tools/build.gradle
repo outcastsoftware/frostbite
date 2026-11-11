@@ -1,7 +1,9 @@
-plugins { id 'java-library' }
+plugins { id 'java-library'; id 'maven-publish' }
 
 java { toolchain { languageVersion = JavaLanguageVersion.of(27) } }
 compileJava { options.release = 21 }
 dependencies {
-    implementation 'org.json:json:20250517'
+    api 'org.json:json:20250517'
 }
+
+publishing { publications { maven(MavenPublication) { from components.java } } }

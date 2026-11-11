@@ -1,0 +1,6 @@
+# JitPack build config. Gradle 9.6 cannot recompile build scripts under a JDK 27 launcher,
+# so build with JDK 21; the Java 27 toolchain is auto-provisioned for compilation.
+jdk:
+  - openjdk21
+install:
+  - ./gradlew :api:publishToMavenLocal :processor:publishToMavenLocal :host-tools:publishToMavenLocal
