@@ -283,23 +283,29 @@ android {
     }
 }
 
-repositories { google(); mavenCentral() }
+repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } }
 
+def frostbite = 'com.github.outcastsoftware.frostbite'
+def frostbiteVersion = 'v0.1.0'          // bump to use a newer Frostbite release
+configurations { frostbitePackager }
 dependencies {
     // The API you write against, only at compile time (it lives in the game already):
-    compileOnly files('libs/frostbite-api.jar')
+    compileOnly "$frostbite:api:$frostbiteVersion"
     // The annotation processor that turns your @Mixin/@Inject classes into manifests:
-    annotationProcessor files('libs/frostbite-processor.jar', 'libs/frostbite-api.jar')
+    annotationProcessor "$frostbite:processor:$frostbiteVersion"
+    annotationProcessor "$frostbite:api:$frostbiteVersion"
+    // The packager that builds your .frostbite (used by the packageFrostbite task):
+    frostbitePackager "$frostbite:host-tools:$frostbiteVersion"
 }
 ```
 
-Put `frostbite-api.jar`, `frostbite-processor.jar`, and `frostbite-host-tools.jar` in a `libs/`
-folder (they come from the Frostbite core build). Copy the `packageFrostbite` task from the sample's
-`build.gradle` — it turns your built mod into a small `.frostbite` file, which is what you install.
+Frostbite is pulled from **JitPack** — there are **no jars to download** into a `libs/` folder.
+Copy the `packageFrostbite` task from the sample's `build.gradle` — it turns your built mod into a
+small `.frostbite` file, which is what you install.
 
-**You need:** JDK 27, Android SDK 37 (with `d8`, `zipalign`, `apksigner`), and — only if you rebuild
-the native runtime — NDK 26.1.10909125. Most mod authors never rebuild the runtime; they reuse
-`frostbite-runtime.zip`.
+**You need:** JDK 27 and an Android SDK 37 (with `d8`, `zipalign`, `apksigner`). You do **not**
+download the Frostbite runtime — Frostbite Desktop fetches it for you. The native runtime only needs
+rebuilding (with NDK 26.1.10909125) if you change Frostbite's own C++, which mod authors never do.
 
 Everything in the rest of this guide goes inside `src/main/java/...` of that project.
 
@@ -916,10 +922,11 @@ accessors or `Il2Cpp`. Once these click, you can write *any* Frostbite mod.
 
 1. **Build the mod:** `gradlew packageFrostbite` → `build/outputs/frostbite/<name>.frostbite`.
    (The annotation processor writes `mod.json`, `hooks.json`, and `mixins.json` into it.)
-2. **Patch the game** with the desktop app, tab *01 Install Frostbite*: pick the original game APK
-   and `frostbite-runtime.zip`, type the launch Activity, choose an output, Build. This embeds the
-   runtime and patches the game's startup.
-3. **Add your mod** in tab *02 Mods*: add the `.frostbite`, choose an output, Build the final APK.
+2. **Patch the game** with Frostbite Desktop, *01 Install*: pick the original game APK. The launch
+   Activity is detected for you and the runtime is downloaded automatically — choose an output and
+   Build. This embeds the runtime and patches the game's startup.
+3. **Add your mod** in *02 Mods*: add the `.frostbite` (add several, reorder, enable/disable, or
+   inspect any mod), choose an output, Build the final APK.
 4. **Install** the final APK (`adb install`). If a copy with a different signature is installed,
    uninstall it first (may wipe its data).
 5. **Watch logcat** (`adb logcat | grep -i frostbite`). On launch you'll see your mod load and
