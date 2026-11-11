@@ -16,15 +16,18 @@ android {
     }
 }
 
-repositories { google(); mavenCentral() }
+repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } }
 
-// Prebuilt Frostbite jars live in libs/, so a mod builds without the core source.
+// Frostbite is pulled from JitPack — no jars to download into libs/. Bump the version
+// to use a newer Frostbite release.
+def frostbite = 'com.github.outcastsoftware.frostbite'
+def frostbiteVersion = 'v0.1.0'
 configurations { frostbitePackager }
 dependencies {
-    compileOnly files('libs/frostbite-api.jar')
-    annotationProcessor files('libs/frostbite-processor.jar', 'libs/frostbite-api.jar')
-    frostbitePackager files('libs/frostbite-host-tools.jar')
-    frostbitePackager 'org.json:json:20250517'
+    compileOnly "$frostbite:api:$frostbiteVersion"
+    annotationProcessor "$frostbite:processor:$frostbiteVersion"
+    annotationProcessor "$frostbite:api:$frostbiteVersion"
+    frostbitePackager "$frostbite:host-tools:$frostbiteVersion"   // brings org.json transitively
 }
 
 // Builds the release mod APK, then strips it to a branded .frostbite mod
