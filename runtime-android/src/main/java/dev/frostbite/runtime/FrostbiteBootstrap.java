@@ -1,5 +1,6 @@
 package dev.frostbite.runtime;
 
+import android.app.Activity;
 import android.content.Context;
 import android.util.Log;
 import java.util.ArrayList;
@@ -22,6 +23,8 @@ public final class FrostbiteBootstrap {
             NativeBridge.initialize(mods);
             state = State.MODS_LOADED;
             Log.i(TAG, "Loaded " + mods.size() + " Frostbite mod(s)");
+            // Attach Mirage's 2D overlay to the game's own window (no overlay permission needed).
+            if (context instanceof Activity activity) MirageOverlay.install(activity);
         } catch (Exception | LinkageError error) {
             state = State.FAILED;
             Log.e(TAG, "Frostbite startup failed", error);
