@@ -38,6 +38,9 @@ public final class NativeBridge {
                                          char retAbi, String argAbi, long[] args) {
                 return nativeInvoke(self, asm, ns, cls, selector, retAbi, argAbi, args);
             }
+            @Override public long gcPersist(long self) { return nativeGcPersist(self); }
+            @Override public long gcTarget(long handle) { return nativeGcTarget(handle); }
+            @Override public void gcFree(long handle) { nativeGcFree(handle); }
         });
         if (ready) install();
     }
@@ -189,4 +192,9 @@ public final class NativeBridge {
                                       String field, char abi, long value);
     static native long nativeInvoke(long self, String assembly, String namespace, String targetClass,
                                     String selector, char returnAbi, String argumentAbi, long[] arguments);
+
+    // Weak GC handles: persist a captured object past its callback. Handle 0 means failure/dead.
+    static native long nativeGcPersist(long self);
+    static native long nativeGcTarget(long handle);
+    static native void nativeGcFree(long handle);
 }

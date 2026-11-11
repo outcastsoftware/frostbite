@@ -13,4 +13,11 @@ public final class Il2CppObject {
     }
 
     public long nativeAddress() { return nativeAddress; }
+
+    /**
+     * Keep this object usable after the current callback returns. See {@link Persistent}.
+     * The raw {@link #nativeAddress()} is only valid during the callback; a {@code Persistent}
+     * re-resolves the object safely and reports when the game has dropped it.
+     */
+    public Persistent persist() { return Il2Cpp.persist(this); }
 }

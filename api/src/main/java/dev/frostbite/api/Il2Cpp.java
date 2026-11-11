@@ -23,6 +23,9 @@ public final class Il2Cpp {
         void set(long self, String asm, String ns, String cls, String field, char abi, long value);
         long invoke(long self, String asm, String ns, String cls, String selector,
                     char retAbi, String argAbi, long[] args);
+        long gcPersist(long self);
+        long gcTarget(long handle);
+        void gcFree(long handle);
     }
 
     private static volatile Backend backend;
@@ -132,6 +135,23 @@ public final class Il2Cpp {
         long value = backend().invoke(address(self), method.asm, method.ns, method.cls, method.member, OBJECT, m.abi, m.values);
         return value == 0 ? null : new Il2CppObject(value);
     }
+
+    // ---- persisting objects past the callback ---------------------------
+
+    /**
+     * Keep an IL2CPP object usable after the callback returns. Captures the object in a weak
+     * GC handle: the returned {@link Persistent} re-resolves it on demand and reports {@code null}
+     * once the game drops it and the GC collects it. The object is not kept alive. Call
+     * {@link Persistent#release()} when done.
+     */
+    public static Persistent persist(Il2CppObject object) {
+        long handle = backend().gcPersist(object.nativeAddress());
+        if (handle == 0) throw new IllegalStateException("Could not persist IL2CPP object");
+        return new Persistent(handle);
+    }
+
+    static long gcTarget(long handle) { return backend().gcTarget(handle); }
+    static void gcFree(long handle) { backend().gcFree(handle); }
 
     private record Marshalled(String abi, long[] values) {}
 

@@ -628,6 +628,24 @@ jlong boxStruct(BNM::Class type, const void *data) {
     return (jlong) reinterpret_cast<uintptr_t>(g_valueBox(klass, const_cast<void *>(data)));
 }
 
+// GC handles let a mod keep an IL2CPP object past the callback. A weak handle tracks
+// liveness without keeping the object alive: get_target returns the current pointer, or
+// null once the game has dropped it and the GC collected it.
+using GcWeakNewFn = uint32_t (*)(void *, int32_t);
+using GcTargetFn = void *(*)(uint32_t);
+using GcFreeFn = void (*)(uint32_t);
+GcWeakNewFn g_gcWeakNew = nullptr;
+GcTargetFn g_gcTarget = nullptr;
+GcFreeFn g_gcFree = nullptr;
+bool resolveGc() {
+    if (!g_gcWeakNew) g_gcWeakNew = reinterpret_cast<GcWeakNewFn>(DobbySymbolResolver("libil2cpp.so", "il2cpp_gchandle_new_weakref"));
+    if (!g_gcTarget) g_gcTarget = reinterpret_cast<GcTargetFn>(DobbySymbolResolver("libil2cpp.so", "il2cpp_gchandle_get_target"));
+    if (!g_gcFree) g_gcFree = reinterpret_cast<GcFreeFn>(DobbySymbolResolver("libil2cpp.so", "il2cpp_gchandle_free"));
+    if (g_gcWeakNew && g_gcTarget && g_gcFree) return true;
+    logError("il2cpp_gchandle_* unavailable");
+    return false;
+}
+
 jlong fieldGet(void *self, BNM::FieldBase base, jchar abi) {
     // A field declared inside a value type is accessed through a boxed object; il2cpp's
     // field offset is header-relative, so read it raw (BNM's Field path validates the
@@ -1295,6 +1313,28 @@ Java_dev_frostbite_runtime_NativeBridge_nativeSetField(
     BNM::FieldBase base = klass.GetField(jstr(env, field));
     if (!base.IsValid()) { logError("nativeSetField: field not found"); return; }
     fieldSet(reinterpret_cast<void *>(static_cast<uintptr_t>(self)), base, abi, value);
+}
+
+// Persist a captured object: returns a weak GC handle (0 on failure). The object is not
+// kept alive — the handle just lets the mod re-resolve it later while the game still holds it.
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeGcPersist(JNIEnv *, jclass, jlong self) {
+    if (!self || !resolveGc()) return 0;
+    return (jlong) g_gcWeakNew(reinterpret_cast<void *>(static_cast<uintptr_t>(self)), 0);
+}
+
+// Resolve a handle to the current object address, or 0 if it has been collected.
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeGcTarget(JNIEnv *, jclass, jlong handle) {
+    if (!handle || !resolveGc()) return 0;
+    return (jlong) reinterpret_cast<uintptr_t>(g_gcTarget(static_cast<uint32_t>(handle)));
+}
+
+// Release a handle. Safe to call once; the handle must not be used afterward.
+extern "C" JNIEXPORT void JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeGcFree(JNIEnv *, jclass, jlong handle) {
+    if (!handle || !resolveGc()) return;
+    g_gcFree(static_cast<uint32_t>(handle));
 }
 
 extern "C" JNIEXPORT jlong JNICALL

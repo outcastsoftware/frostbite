@@ -25,6 +25,8 @@ hunting for offsets that break every game update.
   arguments.
 - Read and write any field (instance or static), call any method — `int`, `long`, `float`,
   `double`, `bool`, enums, objects, and value-type structs.
+- **Persist** a captured object (a hook's `self`) past the callback and edit that same instance
+  on a later frame — a weak GC handle that reports when the game drops it.
 - Resolve everything by **name** at runtime; one bad hook is skipped with a warning, never
   crashing the rest.
 

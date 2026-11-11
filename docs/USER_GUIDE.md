@@ -541,9 +541,40 @@ Any game object that crosses into your Java code is an **`Il2CppObject`** — a 
 the object's native memory address. `self` is one. A method that returns a game object gives you
 one. You can declare such parameters/returns as `Object` or `Il2CppObject`.
 
-**Lifetime:** the address is valid **only during the current callback** unless the game itself
-keeps the object alive. Don't save an `Il2CppObject` from one frame and poke it many frames later;
-by then it may be gone.
+**Lifetime:** the raw address inside an `Il2CppObject` is valid **only during the current
+callback**. Don't stash a bare `Il2CppObject` and poke it many frames later — by then the game may
+have moved or freed the object and the pointer dangles. To keep an object past the callback, use
+`persist()` (next).
+
+### Keeping an object past the callback — `persist()`
+
+Want to grab a hook's `self` and edit that same game instance on a later frame? Call `persist()`
+on the object. You get a `Persistent` — a safe, re-resolvable handle:
+
+```java
+private Persistent captured;
+
+@Inject(method = "UpdateMovement(self)", at = At.HEAD)
+public void onFrame(Object self) {
+    if (captured == null) captured = ((Il2CppObject) self).persist();   // grab it once
+}
+
+// ...any later frame / any other hook...
+Il2CppObject motor = captured.get();     // the live object, or null if the game dropped it
+if (motor != null) {
+    setCanAccelerate(motor, true);       // edit that exact instance
+}
+captured.release();                      // free the handle when done
+```
+
+- `get()` returns the object if it's **still alive**, otherwise `null`. Re-resolved each call, so
+  it's always the current, valid pointer.
+- `isAlive()` is a quick liveness check.
+- `release()` frees the handle. Idempotent; `get()` returns `null` afterward.
+
+It's backed by a **weak** GC handle: it tracks the object's real liveness without keeping it
+alive, so you see exactly what the game sees. That's the right model for a cheat — you hold the
+same entity the game holds, and find out honestly when it's gone.
 
 ### Value types (structs) — the boxing rule
 
@@ -708,6 +739,15 @@ Enums: `At.HEAD` / `At.TAIL`; `SelectorMode.EXACT` / `SelectorMode.REGEX`;
 - Edit args: `(self?, Arguments)` — call `setX`; may add a trailing `CallbackInfo`/CIR
 
 `self` is present for instance (`self`) targets and absent for static (`static`) targets.
+
+### Persisting objects
+
+| Call | Meaning |
+| --- | --- |
+| `obj.persist()` → `Persistent` | keep a game object usable past the callback (weak handle) |
+| `Persistent.get()` → `Il2CppObject` | the object if still alive, else `null` |
+| `Persistent.isAlive()` | liveness check |
+| `Persistent.release()` | free the handle |
 
 ### Type mapping
 
