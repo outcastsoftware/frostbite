@@ -29,7 +29,12 @@ import dev.frostbite.api.Persistent;
  *   <li><b>Telemetry</b> — speed, jump count, and grounded state are logged.</li>
  * </ul>
  *
- * Accessors are declared here with no body; Frostbite generates them. Filter logcat for
+ * <p><b>Style rule:</b> every game object — {@code self}, an object argument, a boxed struct, a
+ * method return — is declared as {@link Il2CppObject}, never a bare {@code Object}. {@code Object}
+ * compiles too, but {@code Il2CppObject} is self-documenting and lets you call {@code persist()},
+ * {@code nativeAddress()}, and friends without a cast. Use it everywhere.
+ *
+ * <p>Accessors are declared here with no body; Frostbite generates them. Filter logcat for
  * {@code FrostbiteSample} to watch it.
  */
 @Mixin(assembly = "Assembly-CSharp", namespace = "SYBO.RunnerCore.Character", targetClass = "CharacterMotor")
@@ -47,55 +52,57 @@ public abstract class CharacterMotorMixin {
     private static final Il2Cpp.Target VEC3_Z = new Il2Cpp.Target("UnityEngine.CoreModule", "UnityEngine", "Vector3", "z");
 
     // ---- accessors used by the cheats and the telemetry ----
+    // Note the object parameter is Il2CppObject, not Object: the motor instance, type-named.
     @AccessMethod("SetAccelerate(self;boolean)")
-    public abstract void setAccelerate(Object motor, boolean on);
+    public abstract void setAccelerate(Il2CppObject motor, boolean on);
 
     @AccessMethod("set_DisableBoundaryImpact(self;boolean)")
-    public abstract void setDisableBoundaryImpact(Object motor, boolean on);
+    public abstract void setDisableBoundaryImpact(Il2CppObject motor, boolean on);
 
     @AccessMethod("set_ColliderEnable(self;boolean)")
-    public abstract void setColliderEnable(Object motor, boolean on);
+    public abstract void setColliderEnable(Il2CppObject motor, boolean on);
 
     @AccessMethod("get_ForwardSpeedTarget(self)")
-    public abstract float speed(Object motor);
+    public abstract float speed(Il2CppObject motor);
 
     @AccessMethod("get_JumpCount(self)")
-    public abstract int jumpCount(Object motor);
+    public abstract int jumpCount(Il2CppObject motor);
 
     @AccessMethod("get_Grounded(self)")
-    public abstract boolean grounded(Object motor);
+    public abstract boolean grounded(Il2CppObject motor);
 
     @AccessField(value = "_canAccelerate", mode = AccessMode.GETTER)
-    public abstract boolean canAccelerate(Object motor);
+    public abstract boolean canAccelerate(Il2CppObject motor);
 
     @AccessField(value = "_canAccelerate", mode = AccessMode.SETTER)
-    public abstract void setCanAccelerate(Object motor, boolean value);
+    public abstract void setCanAccelerate(Il2CppObject motor, boolean value);
 
     @AccessStaticField(value = "LaneChangeThreshold", mode = AccessMode.GETTER)
     public abstract float laneChangeThreshold();
 
     // Enum return via invoke: SurfaceKind comes back as its underlying int.
     @AccessMethod("get_LastTouchedSurface(self)")
-    public abstract int lastSurface(Object motor);
+    public abstract int lastSurface(Il2CppObject motor);
 
     // Struct (value type) return and argument: Vector3 is boxed on the way out and
-    // unboxed on the way back in.
+    // unboxed on the way back in. A boxed struct is an Il2CppObject like any other.
     @AccessMethod("get_WorldPlacerPosition(self)")
-    public abstract Il2CppObject worldPos(Object motor);
+    public abstract Il2CppObject worldPos(Il2CppObject motor);
 
     @AccessMethod("Teleport(self;UnityEngine.Vector3)")
-    public abstract void teleport(Object motor, Il2CppObject position);
+    public abstract void teleport(Il2CppObject motor, Il2CppObject position);
 
     // Struct-return override target (queried by the game only on impacts; god mode avoids those).
     @AccessMethod("get_LastImpactVelocity(self)")
-    public abstract Il2CppObject lastImpactVelocity(Object motor);
+    public abstract Il2CppObject lastImpactVelocity(Il2CppObject motor);
 
     // ---- cheats applied every frame ----
     @Inject(method = "UpdateMovement(self)", at = At.HEAD)
-    public void applyCheats(Object self) {
-        // Capture this motor once so other hooks can edit it on a later frame.
+    public void applyCheats(Il2CppObject self) {
+        // Capture this motor once so other hooks can edit it on a later frame. self is already
+        // an Il2CppObject, so persist() is a direct call — no cast.
         if (capturedMotor == null) {
-            capturedMotor = ((Il2CppObject) self).persist();
+            capturedMotor = self.persist();
             Log.i(TAG, "[SubwayTools] captured motor for later use");
         }
         setCanAccelerate(self, true);
@@ -121,7 +128,7 @@ public abstract class CharacterMotorMixin {
             // edit that instance through the resolved reference (not self).
             Il2CppObject stashed = capturedMotor.get();
             if (stashed != null) {
-                boolean same = stashed.nativeAddress() == ((Il2CppObject) self).nativeAddress();
+                boolean same = stashed.nativeAddress() == self.nativeAddress();
                 setCanAccelerate(stashed, true);   // edit the captured instance, not self
                 Log.i(TAG, "[SubwayTools] persisted self still alive=" + capturedMotor.isAlive()
                         + " sameInstance=" + same + " speedViaStashed=" + speed(stashed));
@@ -139,38 +146,37 @@ public abstract class CharacterMotorMixin {
 
     // ---- god mode: never register a fall (pits/gaps) ----
     @Inject(method = "CheckFalling(self)", at = At.HEAD)
-    public void noFalling(Object self, CallbackInfoReturnable<Boolean> callback) {
+    public void noFalling(Il2CppObject self, CallbackInfoReturnable<Boolean> callback) {
         callback.setReturnValue(Boolean.FALSE);
     }
 
     // ---- infinite jump ----
     @Inject(method = "get_CanJump(self)", at = At.HEAD)
-    public void alwaysCanJump(Object self, CallbackInfoReturnable<Boolean> callback) {
+    public void alwaysCanJump(Il2CppObject self, CallbackInfoReturnable<Boolean> callback) {
         callback.setReturnValue(Boolean.TRUE);
     }
 
     // ---- enum hook argument: MotorStateKind arrives as its underlying int ----
     @Inject(method = "SwitchState(self;SYBO.RunnerCore.Character.MotorStateKind)", at = At.HEAD)
-    public void onSwitchState(Object self, int stateKind) {
+    public void onSwitchState(Il2CppObject self, int stateKind) {
         Log.i(TAG, "[SubwayTools] SwitchState -> MotorStateKind " + stateKind);
     }
 
     // ---- universal trampoline: a hook taking a value-type (Vector3) argument, which the
-    // fixed trampolines cannot pass. The struct arrives as a boxed object. ----
+    // fixed trampolines cannot pass. The struct arrives as a boxed Il2CppObject. ----
     private long surfaceTicks;
 
     @Inject(method = "AdjustVelocityToSurface(self;UnityEngine.Vector3)", at = At.HEAD)
-    public void onSurfaceVelocity(Object self, Object velocity) {
+    public void onSurfaceVelocity(Il2CppObject self, Il2CppObject velocity) {
         if (++surfaceTicks % 120 != 1) return;
-        Il2CppObject v = (Il2CppObject) velocity;
         Log.i(TAG, "[SubwayTools] UNIVERSAL hook AdjustVelocityToSurface vel=("
-                + Il2Cpp.getFloat(v, VEC3_X) + "," + Il2Cpp.getFloat(v, VEC3_Y) + "," + Il2Cpp.getFloat(v, VEC3_Z) + ")");
+                + Il2Cpp.getFloat(velocity, VEC3_X) + "," + Il2Cpp.getFloat(velocity, VEC3_Y) + "," + Il2Cpp.getFloat(velocity, VEC3_Z) + ")");
     }
 
     // ---- argument write-back: force every lane change to the right (+1), whatever was
     // requested. The mutable Arguments view rewrites the argument before the original runs. ----
     @Inject(method = "ChangeLane(self;int)", at = At.HEAD)
-    public void forceRightLane(Object self, Arguments args, CallbackInfoReturnable<Boolean> callback) {
+    public void forceRightLane(Il2CppObject self, Arguments args, CallbackInfoReturnable<Boolean> callback) {
         int requested = args.getInt(0);
         args.setInt(0, 1);
         Log.i(TAG, "[SubwayTools] ChangeLane write-back: " + requested + " -> 1 (always right)");
@@ -178,7 +184,7 @@ public abstract class CharacterMotorMixin {
 
     // ---- struct-RETURN override: force LastImpactVelocity to Vector3(1,1,1) ----
     @Inject(method = "get_LastImpactVelocity(self)", at = At.HEAD)
-    public void overrideImpactVelocity(Object self, CallbackInfoReturnable<Object> callback) {
+    public void overrideImpactVelocity(Il2CppObject self, CallbackInfoReturnable<Il2CppObject> callback) {
         callback.setReturnValue(Mixins.get(VectorMixin.class).one());
     }
 
@@ -186,7 +192,7 @@ public abstract class CharacterMotorMixin {
     private long gravityTicks;
 
     @Inject(method = "ApplyGravity(self)", at = At.HEAD)
-    public void noGravity(Object self, CallbackInfo ci) {
+    public void noGravity(Il2CppObject self, CallbackInfo ci) {
         ci.cancel();   // the original ApplyGravity never runs
         if (++gravityTicks % 300 == 1)
             Log.i(TAG, "[SubwayTools] NOP ApplyGravity (no gravity) #" + gravityTicks);
