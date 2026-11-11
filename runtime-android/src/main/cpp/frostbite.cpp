@@ -1315,6 +1315,37 @@ Java_dev_frostbite_runtime_NativeBridge_nativeSetField(
     fieldSet(reinterpret_cast<void *>(static_cast<uintptr_t>(self)), base, abi, value);
 }
 
+// Create a new IL2CPP instance of a class (il2cpp_object_new) and run its matching constructor.
+// Returns the new object's address (0 on failure). For a value type (e.g. Vector3) the result is
+// a boxed object whose fields can be read/written through the usual accessors.
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeNewInstance(
+        JNIEnv *env, jclass, jstring assembly, jstring nameSpace, jstring targetClass,
+        jstring argumentAbi, jlongArray arguments) {
+    BNM::Image image(jstr(env, assembly));
+    BNM::Class klass(jstr(env, nameSpace), jstr(env, targetClass), image);
+    if (!klass) { logError("nativeNewInstance: class not found"); return 0; }
+    auto *object = klass.CreateNewInstance();
+    if (!object) { logError("nativeNewInstance: allocation failed"); return 0; }
+    std::string argAbi = jstr(env, argumentAbi);
+    jsize count = arguments ? env->GetArrayLength(arguments) : 0;
+    std::vector<jlong> values(count ? count : 1, 0);
+    if (count) env->GetLongArrayRegion(arguments, 0, count, values.data());
+    // A value type is allocated boxed, but its constructor's `this` is the UNBOXED value pointer
+    // (object + header). Field offsets are header-inclusive, so reads afterward still line up.
+    void *instance = object;
+    auto *klassPtr = klass.GetClass();
+    if (klassPtr && abiType(&klassPtr->byval_arg) == 'S')
+        instance = reinterpret_cast<char *>(object) + sizeof(BNM::IL2CPP::Il2CppObject);
+    // Run the constructor whose parameter count matches. A zero-arg request skips an absent ctor.
+    BNM::MethodBase ctor = klass.GetMethod(".ctor", (int) argAbi.size());
+    if (ctor.GetInfo())
+        invokeMethod(instance, ctor, 'V', argAbi, values.data());
+    else if (!argAbi.empty())
+        logError("nativeNewInstance: no constructor with the given argument count");
+    return (jlong) reinterpret_cast<uintptr_t>(object);
+}
+
 // Persist a captured object: returns a weak GC handle (0 on failure). The object is not
 // kept alive — the handle just lets the mod re-resolve it later while the game still holds it.
 extern "C" JNIEXPORT jlong JNICALL

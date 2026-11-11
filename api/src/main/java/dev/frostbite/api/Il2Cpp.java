@@ -26,6 +26,7 @@ public final class Il2Cpp {
         long gcPersist(long self);
         long gcTarget(long handle);
         void gcFree(long handle);
+        long newInstance(String asm, String ns, String cls, String argAbi, long[] args);
     }
 
     private static volatile Backend backend;
@@ -153,6 +154,30 @@ public final class Il2Cpp {
     static long gcTarget(long handle) { return backend().gcTarget(handle); }
     static void gcFree(long handle) { backend().gcFree(handle); }
 
+    // ---- creating objects ------------------------------------------------
+
+    /**
+     * Construct a brand-new IL2CPP object — the equivalent of {@code new Foo(args)} in C#. Allocates
+     * an instance of the class and runs the constructor whose parameter count matches {@code args}.
+     * A value type (e.g. {@code UnityEngine.Vector3}) comes back as a boxed {@link Il2CppObject}
+     * whose fields you can read and write through the accessors.
+     *
+     * <pre>{@code
+     * Il2Cpp.Type vec3 = new Il2Cpp.Type("UnityEngine.CoreModule", "UnityEngine", "Vector3");
+     * Il2CppObject v = Il2Cpp.newInstance(vec3, 1f, 2f, 3f);   // new Vector3(1,2,3)
+     * }</pre>
+     */
+    public static Il2CppObject newInstance(Type type, Object... args) {
+        Marshalled m = marshal(args);
+        long addr = backend().newInstance(type.asm, type.ns, type.cls, m.abi, m.values);
+        return addr == 0 ? null : new Il2CppObject(addr);
+    }
+
+    /** Same as {@link #newInstance(Type, Object...)} with the class named inline. */
+    public static Il2CppObject newInstance(String asm, String ns, String cls, Object... args) {
+        return newInstance(new Type(asm, ns, cls), args);
+    }
+
     private record Marshalled(String abi, long[] values) {}
 
     private static Marshalled marshal(Object[] args) {
@@ -181,6 +206,14 @@ public final class Il2Cpp {
         final String asm, ns, cls, member;
         public Target(String asm, String ns, String cls, String member) {
             this.asm = asm; this.ns = ns; this.cls = cls; this.member = member;
+        }
+    }
+
+    /** An IL2CPP class, for {@link #newInstance(Type, Object...)}. */
+    public static final class Type {
+        final String asm, ns, cls;
+        public Type(String asm, String ns, String cls) {
+            this.asm = asm; this.ns = ns; this.cls = cls;
         }
     }
 }

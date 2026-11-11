@@ -48,6 +48,9 @@ public final class NativeBridge {
             @Override public long gcPersist(long self) { return nativeGcPersist(self); }
             @Override public long gcTarget(long handle) { return nativeGcTarget(handle); }
             @Override public void gcFree(long handle) { nativeGcFree(handle); }
+            @Override public long newInstance(String asm, String ns, String cls, String argAbi, long[] args) {
+                return nativeNewInstance(asm, ns, cls, argAbi, args);
+            }
         });
         if (ready) install();
     }
@@ -206,4 +209,8 @@ public final class NativeBridge {
     static native long nativeGcPersist(long self);
     static native long nativeGcTarget(long handle);
     static native void nativeGcFree(long handle);
+
+    // Construct a new IL2CPP instance (il2cpp_object_new + matching constructor). 0 on failure.
+    static native long nativeNewInstance(String assembly, String namespace, String targetClass,
+                                         String argumentAbi, long[] arguments);
 }
