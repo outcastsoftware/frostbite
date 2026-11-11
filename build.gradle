@@ -1,24 +1,32 @@
-plugins { id 'application' }
+plugins {
+    id 'application'
+    id 'org.openjfx.javafxplugin' version '0.1.0'
+}
 
 group = 'dev.frostbite'
-version = '0.1.0-SNAPSHOT'
+version = '0.1.0'
 
 repositories {
     mavenCentral()
     maven { url 'https://jitpack.io' }
 }
 
+// JavaFX 23 + JDK 21 is a known-good pair and matches host-tools' release target.
 java {
-    toolchain { languageVersion = JavaLanguageVersion.of(27) }
+    toolchain { languageVersion = JavaLanguageVersion.of(21) }
+}
+
+javafx {
+    version = '23.0.2'
+    modules = ['javafx.controls']
 }
 
 dependencies {
-    // Prebuilt from the framework branch; keeps Desktop buildable without the core source.
-    implementation files('libs/frostbite-host-tools.jar')
-    implementation 'org.json:json:20250517'
+    // Frostbite host tools (installer, runtime download, APK inspect, mod patcher) from JitPack.
+    implementation 'com.github.outcastsoftware.frostbite:host-tools:v0.1.0'
     implementation 'org.apktool:apktool-cli:3.0.3'
 }
 
 application {
-    mainClass = 'dev.frostbite.desktop.FrostbiteDesktopApp'
+    mainClass = 'dev.frostbite.desktop.FrostbiteApp'
 }
