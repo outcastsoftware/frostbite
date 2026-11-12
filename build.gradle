@@ -23,7 +23,7 @@ javafx {
 
 dependencies {
     // Frostbite host tools (installer, runtime download, APK inspect, mod patcher) from JitPack.
-    implementation 'com.github.outcastsoftware.frostbite:host-tools:v0.1.0'
+    implementation 'com.github.outcastsoftware.frostbite:host-tools:v0.2.0'
     implementation 'org.apktool:apktool-cli:3.0.3'
 }
 
