@@ -17,7 +17,7 @@ import java.util.function.Consumer;
  */
 public final class RuntimeProvider {
     /** The release tag the Desktop ships against. Bump when a new runtime is published. */
-    public static final String DEFAULT_TAG = "v0.1.0";
+    public static final String DEFAULT_TAG = "v0.2.0";
     private static final String REPO = "outcastsoftware/frostbite";
     private static final String ASSET = "frostbite-runtime.zip";
     private static final long MIN_BYTES = 4096;            // a real runtime zip is far larger

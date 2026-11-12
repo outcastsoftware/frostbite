@@ -27,6 +27,9 @@ hunting for offsets that break every game update.
   `double`, `bool`, enums, objects, and value-type structs.
 - **Persist** a captured object (a hook's `self`) past the callback and edit that same instance
   on a later frame — a weak GC handle that reports when the game drops it.
+- **Create** new IL2CPP objects (`Il2Cpp.newInstance`, e.g. `new Vector3(1,2,3)`).
+- **Draw** with **Mirage**: a 2D overlay (rounded rects, text, lines — no overlay permission) and 3D
+  world objects (boxes, capsules, meshes) with depth-occlusion control for ESP.
 - Resolve everything by **name** at runtime; one bad hook is skipped with a warning, never
   crashing the rest.
 

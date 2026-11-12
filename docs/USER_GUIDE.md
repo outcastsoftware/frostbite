@@ -936,6 +936,74 @@ Full pipeline detail: [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ---
 
+# Part E½ — Creating objects and drawing (Mirage)
+
+Two capabilities go beyond reading and hooking the game: **making new IL2CPP objects**, and
+**drawing** — a 2D overlay and 3D world objects (Mirage).
+
+## Create new objects — `Il2Cpp.newInstance`
+
+Construct a brand-new IL2CPP object, the equivalent of `new Foo(args)` in C#. It allocates the
+object and runs the constructor whose parameter count matches.
+
+```java
+Il2Cpp.Type vec3 = new Il2Cpp.Type("UnityEngine.CoreModule", "UnityEngine", "Vector3");
+Il2CppObject v = Il2Cpp.newInstance(vec3, 1f, 2f, 3f);   // new Vector3(1, 2, 3)
+float x = Il2Cpp.getFloat(v, VEC3_X);                    // read it back
+```
+
+A value type (like `Vector3`) comes back as a boxed `Il2CppObject` whose fields you read and write
+with the accessors. Reference types return the live object. Pass the result straight into any hook
+argument, field setter, or method call that wants that type.
+
+## Mirage 2D — an overlay, no permission
+
+Because Frostbite runs **inside the game's process**, Mirage draws on a transparent view in the
+game's **own** window — so it needs **no overlay permission**. It's plain Android `Canvas` drawing:
+rounded rects, strokes, lines, circles, text, in screen pixels with ARGB colors. Rebuild the frame
+each tick from a per-frame hook.
+
+```java
+@Inject(method = "UpdateMovement(self)", at = At.HEAD)
+public void hud(Il2CppObject self) {
+    if (!Mirage.available()) return;
+    Mirage.clear();
+    Mirage.roundRect(48, 140, 320, 100, 18, Mirage.rgba(16, 18, 20, 220));   // panel
+    Mirage.strokeRect(48, 140, 320, 100, 18, 2, Mirage.rgb(213, 203, 188));  // outline
+    Mirage.text(72, 182, "SPEED " + speed, 30, Mirage.rgb(243, 243, 239));
+}
+```
+
+Also `line`, `fillCircle`/`strokeCircle`, `width()`/`height()`, `show()`/`hide()`, and
+`rgb`/`rgba`.
+
+## Mirage 3D — real world objects
+
+Mirage 3D spawns actual Unity `GameObject`s (built through `newInstance` + invoke), which the engine
+draws every frame with correct depth and perspective.
+
+```java
+Mirage3D.Node box = Mirage3D.box().scale(3);     // also capsule(), sphere(), cylinder(), ...
+// a Node persists across frames — move it every frame to track something:
+box.position(x, y + 4, z + 12);
+// draw it through walls (true ESP), then restore:
+box.occlude(false);
+// when done:
+box.destroy();
+```
+
+A `Node` holds the GameObject in a persistent handle, so it survives across callbacks;
+`alive()` reports whether the scene still has it, `gameObject()` hands you the object to assign your
+own material.
+
+**ESP / depth occlusion:** `occlude(false)` pushes the object to the overlay render queue and sets
+its depth test to Always, so it draws over walls — the basis of ESP. How completely it defeats depth
+depends on the game's shader honoring `_ZTest`; for guaranteed ESP, project world positions to the
+screen and draw boxes with the 2D overlay. Primitives render with Unity's default material, which a
+game on a custom render pipeline may show untextured until you assign one of its own materials.
+
+---
+
 # Part F — Reference
 
 ## 16. Full reference
