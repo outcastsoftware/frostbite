@@ -11,6 +11,8 @@ import dev.frostbite.api.CallbackInfo;
 import dev.frostbite.api.CallbackInfoReturnable;
 import dev.frostbite.api.Il2Cpp;
 import dev.frostbite.api.Il2CppObject;
+import dev.frostbite.api.Mirage;
+import dev.frostbite.api.Mirage3D;
 import dev.frostbite.api.Inject;
 import dev.frostbite.api.Mixin;
 import dev.frostbite.api.Mixins;
@@ -45,6 +47,12 @@ public abstract class CharacterMotorMixin {
     // The live motor captured past its callback: taken once in a HEAD hook, then reused from
     // a later frame to edit that same instance. A weak handle, so it reports when it dies.
     private Persistent capturedMotor;
+
+    // The Vector3 class, for constructing new instances.
+    private static final Il2Cpp.Type VEC3 = new Il2Cpp.Type("UnityEngine.CoreModule", "UnityEngine", "Vector3");
+
+    // A Mirage 3D marker spawned once and repositioned each frame; drawn through walls (ESP).
+    private Mirage3D.Node espBox;
 
     // Fields on the boxed Vector3 (a value type) returned by worldPos().
     private static final Il2Cpp.Target VEC3_X = new Il2Cpp.Target("UnityEngine.CoreModule", "UnityEngine", "Vector3", "x");
@@ -109,14 +117,44 @@ public abstract class CharacterMotorMixin {
         setAccelerate(self, true);
         setDisableBoundaryImpact(self, true);
         setColliderEnable(self, false);   // god mode: no obstacle collisions
+
+        // Mirage 2D: a live HUD panel in the game's own window (no overlay permission).
+        if (Mirage.available()) {
+            Mirage.clear();
+            Mirage.roundRect(48, 140, 320, 104, 18, Mirage.rgba(16, 18, 20, 220));
+            Mirage.strokeRect(48, 140, 320, 104, 18, 2, Mirage.rgb(213, 203, 188));
+            Mirage.text(72, 182, "FROSTBITE MIRAGE", 30, Mirage.rgb(243, 243, 239));
+            Mirage.text(72, 220, "speed  " + (int) speed(self), 24, Mirage.rgb(213, 203, 188));
+            Mirage.fillCircle(340, 170, 9, Mirage.rgb(213, 203, 188));
+        }
+
+        // Mirage 3D: a true in-engine ESP box — colored and drawn THROUGH walls (occlude(false)),
+        // following the player. Spawned once, recolored/occluded once, repositioned each frame.
+        if (espBox == null) {
+            espBox = Mirage3D.box();
+            if (espBox != null) {
+                espBox.scale(2f).color(Mirage.rgb(239, 149, 142)).occlude(false);
+                Log.i(TAG, "[SubwayTools] Mirage 3D ESP box spawned (through walls)");
+            }
+        }
+        if (espBox != null && espBox.alive()) {
+            Il2CppObject p = worldPos(self);
+            espBox.position(Il2Cpp.getFloat(p, VEC3_X) + 4f, Il2Cpp.getFloat(p, VEC3_Y) + 2f,
+                    Il2Cpp.getFloat(p, VEC3_Z) + 10f);
+        }
         if (++frames % 120 == 1) {
             // Invoke a hooked static method on another mixin: the override makes it true.
             boolean poolWorking = Mixins.get(PoolManagerMixin.class).working();
 
-            // Struct return + struct field reads + struct-argument round-trip (Vector3).
+            // Struct  return + struct field reads + struct-argument round-trip (Vector3).
             Il2CppObject pos = worldPos(self);
             float px = Il2Cpp.getFloat(pos, VEC3_X), py = Il2Cpp.getFloat(pos, VEC3_Y), pz = Il2Cpp.getFloat(pos, VEC3_Z);
             teleport(self, pos);   // pass the struct back in; net no-op, proves unboxing
+
+            // Instance creation: build a brand-new Vector3(7,8,9) from scratch and read it back.
+            Il2CppObject made = Il2Cpp.newInstance(VEC3, 7f, 8f, 9f);
+            Log.i(TAG, "[SubwayTools] newInstance Vector3 = (" + Il2Cpp.getFloat(made, VEC3_X) + ","
+                    + Il2Cpp.getFloat(made, VEC3_Y) + "," + Il2Cpp.getFloat(made, VEC3_Z) + ")");
 
             // Struct-RETURN override: get_LastImpactVelocity is forced to Vector3(1,1,1).
             Il2CppObject iv = lastImpactVelocity(self);

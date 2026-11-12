@@ -21,7 +21,7 @@ repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } }
 // Frostbite is pulled from JitPack — no jars to download into libs/. Bump the version
 // to use a newer Frostbite release.
 def frostbite = 'com.github.outcastsoftware.frostbite'
-def frostbiteVersion = 'v0.1.0'
+def frostbiteVersion = 'v0.2.0'
 configurations { frostbitePackager }
 dependencies {
     compileOnly "$frostbite:api:$frostbiteVersion"
