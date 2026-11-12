@@ -983,24 +983,22 @@ Mirage 3D spawns actual Unity `GameObject`s (built through `newInstance` + invok
 draws every frame with correct depth and perspective.
 
 ```java
-Mirage3D.Node box = Mirage3D.box().scale(3);     // also capsule(), sphere(), cylinder(), ...
-// a Node persists across frames — move it every frame to track something:
-box.position(x, y + 4, z + 12);
-// draw it through walls (true ESP), then restore:
-box.occlude(false);
-// when done:
-box.destroy();
+Mirage3D.Node box = Mirage3D.box().scale(2)      // also capsule(), sphere(), cylinder(), ...
+        .color(Mirage.rgb(239, 149, 142))        // flat color
+        .occlude(false);                         // draw THROUGH walls — true ESP
+// a Node persists across frames — move it onto a target every frame:
+box.position(x, y, z);
+box.destroy();                                   // when done
 ```
 
-A `Node` holds the GameObject in a persistent handle, so it survives across callbacks;
-`alive()` reports whether the scene still has it, `gameObject()` hands you the object to assign your
-own material.
+A `Node` holds the GameObject in a persistent handle, so it survives across callbacks; `alive()`
+reports whether the scene still has it, `gameObject()` hands you the object itself.
 
-**ESP / depth occlusion:** `occlude(false)` pushes the object to the overlay render queue and sets
-its depth test to Always, so it draws over walls — the basis of ESP. How completely it defeats depth
-depends on the game's shader honoring `_ZTest`; for guaranteed ESP, project world positions to the
-screen and draw boxes with the 2D overlay. Primitives render with Unity's default material, which a
-game on a custom render pipeline may show untextured until you assign one of its own materials.
+**Color + ESP are in-engine.** `color()` and `occlude()` assign a material built from Unity's
+built-in `Hidden/Internal-Colored` shader, which honors a flat `_Color` and a `_ZTest` depth mode.
+`color()` also fixes the magenta you'd otherwise see from a primitive's default material on a custom
+render pipeline. `occlude(false)` sets the depth test to **Always**, so the object renders over
+walls on the GPU — real ESP, no screen overlay and no per-frame projection.
 
 ---
 
@@ -1084,9 +1082,10 @@ arguments. (A bare `Object` is accepted wherever `Il2CppObject` is, but prefer `
   translate ARM.
 - **Unity version:** the native runtime is pinned to one IL2CPP memory layout (default Unity 2022.2).
   A game on a very different Unity version needs the runtime rebuilt to match.
-- **Not included:** an on-screen mod-menu/overlay, ESP/drawing, raw arbitrary-address memory
-  read/write, and mid-function instruction patching. Frostbite works at method boundaries and by
-  name. (A menu/toggle layer can be built *on top* of Frostbite in your mod.)
+- **Drawing is available** via Mirage (2D overlay + in-engine 3D/ESP). **Not included:** raw
+  arbitrary-address memory read/write and mid-function instruction patching — Frostbite works at
+  method boundaries and by name. Custom mesh topology (arbitrary vertices/triangles) is not yet
+  wrapped, though the array primitives it needs (`Il2Cpp.arrayLength`/`arrayGet`) are in place.
 
 ## 18. Troubleshooting
 

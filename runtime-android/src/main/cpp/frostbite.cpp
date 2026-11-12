@@ -1346,6 +1346,55 @@ Java_dev_frostbite_runtime_NativeBridge_nativeNewInstance(
     return (jlong) reinterpret_cast<uintptr_t>(object);
 }
 
+// Create an IL2CPP string from a Java string (for string method arguments).
+using StringNewFn = BNM::IL2CPP::Il2CppObject *(*)(const char *);
+StringNewFn g_stringNew = nullptr;
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeNewString(JNIEnv *env, jclass, jstring value) {
+    if (!g_stringNew)
+        g_stringNew = reinterpret_cast<StringNewFn>(DobbySymbolResolver("libil2cpp.so", "il2cpp_string_new"));
+    if (!g_stringNew) { logError("il2cpp_string_new unavailable"); return 0; }
+    std::string text = jstr(env, value);
+    return (jlong) reinterpret_cast<uintptr_t>(g_stringNew(text.c_str()));
+}
+
+// Resolve a class to its System.Type object (for GetComponent(Type), typeof(...), etc).
+using TypeObjectFn = BNM::IL2CPP::Il2CppObject *(*)(const void *);
+TypeObjectFn g_typeObject = nullptr;
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeTypeObject(
+        JNIEnv *env, jclass, jstring assembly, jstring nameSpace, jstring targetClass) {
+    BNM::Image image(jstr(env, assembly));
+    BNM::Class klass(jstr(env, nameSpace), jstr(env, targetClass), image);
+    if (!klass) { logError("nativeTypeObject: class not found"); return 0; }
+    auto *klassPtr = klass.GetClass();
+    if (!klassPtr) return 0;
+    if (!g_typeObject)
+        g_typeObject = reinterpret_cast<TypeObjectFn>(DobbySymbolResolver("libil2cpp.so", "il2cpp_type_get_object"));
+    if (!g_typeObject) { logError("il2cpp_type_get_object unavailable"); return 0; }
+    return (jlong) reinterpret_cast<uintptr_t>(g_typeObject(&klassPtr->byval_arg));
+}
+
+// IL2CPP array layout: Il2CppObject header (2 ptrs) + bounds ptr + max_length (ptr-sized) + elements.
+// So length lives at 3 pointers in, element data at 4 pointers in. Works on arm64 and arm32.
+extern "C" JNIEXPORT jint JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeArrayLength(JNIEnv *, jclass, jlong array) {
+    if (!array) return 0;
+    auto *base = reinterpret_cast<char *>(static_cast<uintptr_t>(array));
+    return (jint) *reinterpret_cast<uintptr_t *>(base + 3 * sizeof(void *));
+}
+
+// Read one reference-type element (a pointer) from an object array, or 0 if out of range.
+extern "C" JNIEXPORT jlong JNICALL
+Java_dev_frostbite_runtime_NativeBridge_nativeArrayGetObject(JNIEnv *, jclass, jlong array, jint index) {
+    if (!array || index < 0) return 0;
+    auto *base = reinterpret_cast<char *>(static_cast<uintptr_t>(array));
+    uintptr_t length = *reinterpret_cast<uintptr_t *>(base + 3 * sizeof(void *));
+    if ((uintptr_t) index >= length) return 0;
+    auto *elements = reinterpret_cast<void **>(base + 4 * sizeof(void *));
+    return (jlong) reinterpret_cast<uintptr_t>(elements[index]);
+}
+
 // Persist a captured object: returns a weak GC handle (0 on failure). The object is not
 // kept alive — the handle just lets the mod re-resolve it later while the game still holds it.
 extern "C" JNIEXPORT jlong JNICALL

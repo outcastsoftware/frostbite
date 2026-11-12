@@ -14,11 +14,11 @@ This guide describes the working Subway Surfers 3.70.3 prototype. The installer 
 | Input | Produced by | Purpose |
 | --- | --- | --- |
 | Original game APK | Game distribution | The unmodified Unity IL2CPP game |
-| `frostbite-runtime.zip` | Frostbite core build | Java runtime and ARM native libraries |
-| Frostbite game APK | **Install Frostbite** tab | Game with bootstrap and runtime, ready for mods |
-| Mod APK | Your Java Android mod project (`assembleDebug`) | Mod DEX and generated Frostbite manifests |
+| `frostbite-runtime.zip` | Downloaded automatically from GitHub by Desktop | Java runtime and ARM native libraries |
+| Frostbite game APK | **Install** view | Game with bootstrap and runtime, ready for mods |
+| Mod APK | Your Java Android mod project (`assembleRelease`) | Mod DEX and generated Frostbite manifests |
 | `.frostbite` mod | `packageFrostbite` task | The mod DEX, ARM libraries, and manifests only — no full APK, with Frostbite branding |
-| Final game APK | **Mods** tab | Frostbite game plus one or more mod packages |
+| Final game APK | **Mods** view | Frostbite game plus one or more mod packages |
 
 Install the **final game APK** on Android. A mod package is an input to the desktop app; installing a mod as a separate Android app does not load it into the game.
 
@@ -42,26 +42,35 @@ Open the `Frostbite` core project in a Java/Android IDE with JDK 27. Run the Gra
 Frostbite/build/distributions/frostbite-runtime.zip
 ```
 
-Open the separate `Frostbite-Desktop` project and run Gradle `installDist`. On Windows, double-click:
+Most mod authors do **not** build the runtime at all — Frostbite Desktop downloads it. You only run `runtimeBundle` if you change Frostbite's own native code.
+
+Open the separate `Frostbite-Desktop` project (a JavaFX app) and run Gradle `run`, or `installDist` and launch:
 
 ```text
-fr/Frostbite-Desktop/build/install/frostbite-desktop/bin/frostbite-desktop.bat
+Frostbite-Desktop/build/install/frostbite-desktop/bin/frostbite-desktop.bat
 ```
 
-The desktop project is self-contained: it builds against a prebuilt `host-tools` jar in its own `libs/` and does not need the core source. The app has two tabs, uses one bundled development key for both, and finds the Android SDK installed on this computer.
+The desktop app pulls `host-tools` from JitPack, downloads the Frostbite runtime from GitHub automatically, uses one bundled development key, and finds the Android SDK on this computer (`ANDROID_HOME`). It has two views, **Install** and **Mods**.
 
 ## 2. Make a Java mod
 
-Use `Frostbite-Sample-Mod` as a starting project. It is self-contained: prebuilt Frostbite jars live in its `libs/`, so a mod builds without the core source. Its `build.gradle` declares:
+Use `frostbite-sample` as a starting project. Frostbite comes from **JitPack** — there are no jars to download. Its `build.gradle` declares:
 
 ```groovy
+repositories { google(); mavenCentral(); maven { url 'https://jitpack.io' } }
+
+def frostbite = 'com.github.outcastsoftware.frostbite'
+def frostbiteVersion = 'v0.1.0'
+configurations { frostbitePackager }
 dependencies {
-    compileOnly files('libs/frostbite-api.jar')
-    annotationProcessor files('libs/frostbite-processor.jar', 'libs/frostbite-api.jar')
+    compileOnly "$frostbite:api:$frostbiteVersion"
+    annotationProcessor "$frostbite:processor:$frostbiteVersion"
+    annotationProcessor "$frostbite:api:$frostbiteVersion"
+    frostbitePackager "$frostbite:host-tools:$frostbiteVersion"
 }
 ```
 
-Those jars are built from the `framework` branch (`frostbite-api.jar`, `frostbite-processor.jar`, and `frostbite-host-tools.jar` for `packageFrostbite`). Rebuild and replace them when the core API changes.
+Bump `frostbiteVersion` to a newer release tag when you want a newer Frostbite.
 
 Give your own mod a unique Android `applicationId` and a unique Frostbite ID. The entrypoint must implement `ModInitializer`:
 

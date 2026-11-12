@@ -51,6 +51,10 @@ public final class NativeBridge {
             @Override public long newInstance(String asm, String ns, String cls, String argAbi, long[] args) {
                 return nativeNewInstance(asm, ns, cls, argAbi, args);
             }
+            @Override public int arrayLength(long array) { return nativeArrayLength(array); }
+            @Override public long arrayGetObject(long array, int index) { return nativeArrayGetObject(array, index); }
+            @Override public long typeObject(String asm, String ns, String cls) { return nativeTypeObject(asm, ns, cls); }
+            @Override public long newString(String value) { return nativeNewString(value); }
         });
         if (ready) install();
     }
@@ -213,4 +217,14 @@ public final class NativeBridge {
     // Construct a new IL2CPP instance (il2cpp_object_new + matching constructor). 0 on failure.
     static native long nativeNewInstance(String assembly, String namespace, String targetClass,
                                          String argumentAbi, long[] arguments);
+
+    // IL2CPP array access.
+    static native int nativeArrayLength(long array);
+    static native long nativeArrayGetObject(long array, int index);
+
+    // System.Type object for a class.
+    static native long nativeTypeObject(String assembly, String namespace, String targetClass);
+
+    // IL2CPP string from a Java string.
+    static native long nativeNewString(String value);
 }

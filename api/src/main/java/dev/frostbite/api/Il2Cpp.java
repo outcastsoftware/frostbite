@@ -27,6 +27,10 @@ public final class Il2Cpp {
         long gcTarget(long handle);
         void gcFree(long handle);
         long newInstance(String asm, String ns, String cls, String argAbi, long[] args);
+        int arrayLength(long array);
+        long arrayGetObject(long array, int index);
+        long typeObject(String asm, String ns, String cls);
+        long newString(String value);
     }
 
     private static volatile Backend backend;
@@ -154,6 +158,26 @@ public final class Il2Cpp {
     static long gcTarget(long handle) { return backend().gcTarget(handle); }
     static void gcFree(long handle) { backend().gcFree(handle); }
 
+    // ---- arrays -----------------------------------------------------------
+
+    /** The length of an IL2CPP array. */
+    public static int arrayLength(Il2CppObject array) {
+        return array == null ? 0 : backend().arrayLength(array.nativeAddress());
+    }
+
+    /** Element {@code index} of a reference-type (object) array, or {@code null}. */
+    public static Il2CppObject arrayGet(Il2CppObject array, int index) {
+        if (array == null) return null;
+        long addr = backend().arrayGetObject(array.nativeAddress(), index);
+        return addr == 0 ? null : new Il2CppObject(addr);
+    }
+
+    /** The {@code System.Type} object for a class — e.g. to pass to {@code GetComponent(Type)}. */
+    public static Il2CppObject typeObject(Type type) {
+        long addr = backend().typeObject(type.asm, type.ns, type.cls);
+        return addr == 0 ? null : new Il2CppObject(addr);
+    }
+
     // ---- creating objects ------------------------------------------------
 
     /**
@@ -192,6 +216,7 @@ public final class Il2Cpp {
             else if (arg instanceof Boolean value) { abi.append(BOOL); values[i] = value ? 1 : 0; }
             else if (arg == null) { abi.append(OBJECT); values[i] = 0; }
             else if (arg instanceof Il2CppObject value) { abi.append(OBJECT); values[i] = value.nativeAddress(); }
+            else if (arg instanceof String value) { abi.append(OBJECT); values[i] = backend().newString(value); }
             else throw new IllegalArgumentException("Unsupported IL2CPP argument: " + arg.getClass());
         }
         return new Marshalled(abi.toString(), values);

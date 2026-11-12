@@ -1,34 +1,44 @@
 package dev.frostbite.api;
 
 /**
- * Mirage's 3D half: spawn real Unity primitives and meshes into the game world. Unlike the 2D
- * overlay, these are actual {@code GameObject}s the engine draws every frame with correct depth and
- * perspective — built entirely through Frostbite's invoke + {@link Il2Cpp#newInstance} machinery,
- * no native rendering of our own.
+ * Mirage's 3D half: spawn real Unity primitives into the game world and render them <b>in-engine</b>
+ * — actual {@code GameObject}s the GPU draws every frame with correct depth and perspective, built
+ * through Frostbite's invoke + {@link Il2Cpp#newInstance} machinery.
+ *
+ * <p>{@link Node#color} and {@link Node#occlude} assign a material using Unity's built-in
+ * {@code Hidden/Internal-Colored} shader, which honors a flat {@code _Color} and a {@code _ZTest}
+ * depth mode. {@code occlude(false)} sets depth test to <b>Always</b>, so the object renders
+ * <b>through walls</b> — true, GPU-side ESP, no screen overlay.
  *
  * <pre>{@code
- * Mirage3D.Node cube = Mirage3D.box().scale(3).position(x, y + 4, z + 12);
- * // ...later, keep it across frames with cube.transform()'s persist(), or:
- * cube.destroy();
+ * Mirage3D.Node marker = Mirage3D.box().scale(2)
+ *         .color(Mirage.rgb(239, 149, 142))
+ *         .occlude(false);                       // draws through walls
+ * // a Node persists across frames — move it onto a target each frame:
+ * marker.position(x, y, z);
+ * marker.destroy();
  * }</pre>
- *
- * <p>Primitives render with Unity's default material. A game using a custom render pipeline may show
- * them untextured (magenta) until you assign one of its own materials to {@link Node#gameObject()}.
  */
 public final class Mirage3D {
     private static final String UE = "UnityEngine.CoreModule", NS = "UnityEngine";
     private static final Il2Cpp.Target CREATE =
             new Il2Cpp.Target(UE, NS, "GameObject", "CreatePrimitive(static;UnityEngine.PrimitiveType)");
     private static final Il2Cpp.Target GET_TRANSFORM = new Il2Cpp.Target(UE, NS, "GameObject", "get_transform(self)");
+    private static final Il2Cpp.Target GET_COMPONENT = new Il2Cpp.Target(UE, NS, "GameObject", "GetComponent(self;System.Type)");
     private static final Il2Cpp.Target SET_POSITION = new Il2Cpp.Target(UE, NS, "Transform", "set_position(self;UnityEngine.Vector3)");
     private static final Il2Cpp.Target SET_SCALE = new Il2Cpp.Target(UE, NS, "Transform", "set_localScale(self;UnityEngine.Vector3)");
     private static final Il2Cpp.Target SET_EULER = new Il2Cpp.Target(UE, NS, "Transform", "set_eulerAngles(self;UnityEngine.Vector3)");
     private static final Il2Cpp.Target DESTROY = new Il2Cpp.Target(UE, NS, "Object", "Destroy(static;UnityEngine.Object)");
-    private static final Il2Cpp.Target GET_COMPONENT = new Il2Cpp.Target(UE, NS, "GameObject", "GetComponent(self;string)");
-    private static final Il2Cpp.Target GET_MATERIAL = new Il2Cpp.Target(UE, NS, "Renderer", "get_material(self)");
-    private static final Il2Cpp.Target SET_RENDER_QUEUE = new Il2Cpp.Target(UE, NS, "Material", "set_renderQueue(self;int)");
+    private static final Il2Cpp.Target SHADER_FIND = new Il2Cpp.Target(UE, NS, "Shader", "Find(static;string)");
+    private static final Il2Cpp.Target SET_MATERIAL = new Il2Cpp.Target(UE, NS, "Renderer", "set_material(self;UnityEngine.Material)");
+    private static final Il2Cpp.Target SET_COLOR = new Il2Cpp.Target(UE, NS, "Material", "SetColor(self;string;UnityEngine.Color)");
     private static final Il2Cpp.Target SET_INT = new Il2Cpp.Target(UE, NS, "Material", "SetInt(self;string;int)");
+    private static final Il2Cpp.Target SET_RENDER_QUEUE = new Il2Cpp.Target(UE, NS, "Material", "set_renderQueue(self;int)");
     private static final Il2Cpp.Type VEC3 = new Il2Cpp.Type(UE, NS, "Vector3");
+    private static final Il2Cpp.Type COLOR = new Il2Cpp.Type(UE, NS, "Color");
+    private static final Il2Cpp.Type MATERIAL = new Il2Cpp.Type(UE, NS, "Material");
+    private static final Il2Cpp.Type RENDERER = new Il2Cpp.Type(UE, NS, "Renderer");
+    private static Il2CppObject rendererType;   // System.Type for Renderer (permanent; resolved once)
 
     /** Unity's built-in primitive shapes (values match {@code UnityEngine.PrimitiveType}). */
     public enum Shape {
@@ -52,13 +62,21 @@ public final class Mirage3D {
     public static Node plane() { return spawn(Shape.PLANE); }
     public static Node quad() { return spawn(Shape.QUAD); }
 
+    private static Il2CppObject rendererType() {
+        if (rendererType == null) rendererType = Il2Cpp.typeObject(RENDERER);
+        return rendererType;
+    }
+
     /**
-     * A spawned world object you can move, scale, rotate, occlude, and destroy. The GameObject is
-     * held in a persistent handle, so a {@code Node} stays usable across frames — update an ESP
+     * A spawned world object you can move, scale, rotate, color, occlude, and destroy. The GameObject
+     * is held in a persistent handle, so a {@code Node} stays usable across frames — update an ESP
      * marker's {@link #position} every frame. {@link #alive()} reports if the scene still has it.
      */
     public static final class Node {
         private final Persistent handle;   // the GameObject, persisted across frames
+        private Il2CppObject material;     // our Internal-Colored material (lazy)
+        private int color = 0xFFFFFFFF;
+        private boolean through;           // true = draw through walls (ESP)
 
         Node(Il2CppObject gameObject) { this.handle = gameObject.persist(); }
 
@@ -89,25 +107,35 @@ public final class Mirage3D {
             return this;
         }
 
+        /** Flat color (ARGB), applied via an {@code Internal-Colored} material (fixes the default magenta). */
+        public Node color(int argb) { this.color = argb; applyMaterial(); return this; }
+
         /**
-         * Control depth occlusion. {@code occlude(false)} makes the object draw <b>through walls</b>
-         * — the basis of true ESP — by pushing its material to the overlay render queue and setting
-         * its depth test to Always; {@code occlude(true)} restores normal depth. Reliability depends
-         * on the game's shader honoring {@code _ZTest}; for guaranteed ESP, draw boxes with the 2D
-         * {@link Mirage} overlay at projected screen positions instead.
+         * Depth occlusion. {@code occlude(false)} makes the object draw <b>through walls</b> — true
+         * in-engine ESP — by setting the material's depth test to Always and pushing it to the
+         * overlay render queue; {@code occlude(true)} restores normal depth.
          */
-        public Node occlude(boolean occluded) {
+        public Node occlude(boolean occluded) { this.through = !occluded; applyMaterial(); return this; }
+
+        /** (Re)build and assign the Internal-Colored material with the current color + depth mode. */
+        private void applyMaterial() {
             Il2CppObject go = handle.get();
-            if (go == null) return this;
-            Il2CppObject renderer = Il2Cpp.invokeObject(go, GET_COMPONENT, "MeshRenderer");
-            if (renderer != null) {
-                Il2CppObject material = Il2Cpp.invokeObject(renderer, GET_MATERIAL);
-                if (material != null) {
-                    Il2Cpp.invokeVoid(material, SET_RENDER_QUEUE, occluded ? 2000 : 4000);
-                    Il2Cpp.invokeVoid(material, SET_INT, "_ZTest", occluded ? 4 : 8);   // 4=LEqual, 8=Always
-                }
+            if (go == null) return;
+            Il2CppObject renderer = Il2Cpp.invokeObject(go, GET_COMPONENT, rendererType());
+            if (renderer == null) return;
+            if (material == null) {
+                Il2CppObject shader = Il2Cpp.invokeObject(null, SHADER_FIND, "Hidden/Internal-Colored");
+                if (shader == null) return;
+                material = Il2Cpp.newInstance(MATERIAL, shader);
+                if (material == null) return;
             }
-            return this;
+            float r = ((color >> 16) & 0xff) / 255f, g = ((color >> 8) & 0xff) / 255f;
+            float b = (color & 0xff) / 255f, a = ((color >> 24) & 0xff) / 255f;
+            Il2Cpp.invokeVoid(material, SET_COLOR, "_Color", Il2Cpp.newInstance(COLOR, r, g, b, a));
+            Il2Cpp.invokeVoid(material, SET_INT, "_ZTest", through ? 8 : 4);    // 8=Always, 4=LEqual
+            Il2Cpp.invokeVoid(material, SET_INT, "_ZWrite", through ? 0 : 1);
+            Il2Cpp.invokeVoid(material, SET_RENDER_QUEUE, through ? 5000 : 2000);
+            Il2Cpp.invokeVoid(renderer, SET_MATERIAL, material);
         }
 
         /** Remove this object from the scene. */
