@@ -151,6 +151,13 @@ public abstract class CharacterMotorMixin {
             float px = Il2Cpp.getFloat(pos, VEC3_X), py = Il2Cpp.getFloat(pos, VEC3_Y), pz = Il2Cpp.getFloat(pos, VEC3_Z);
             teleport(self, pos);   // pass the struct back in; net no-op, proves unboxing
 
+            // Instance finding: walk the GC heap for every live CharacterMotor (and Transform).
+            int motors = Il2Cpp.findInstances(new Il2Cpp.Type("Assembly-CSharp",
+                    "SYBO.RunnerCore.Character", "CharacterMotor")).length;
+            int transforms = Il2Cpp.findInstances(new Il2Cpp.Type("UnityEngine.CoreModule",
+                    "UnityEngine", "Transform")).length;
+            Log.i(TAG, "[SubwayTools] findInstances CharacterMotor=" + motors + " Transform=" + transforms);
+
             // Instance creation: build a brand-new Vector3(7,8,9) from scratch and read it back.
             Il2CppObject made = Il2Cpp.newInstance(VEC3, 7f, 8f, 9f);
             Log.i(TAG, "[SubwayTools] newInstance Vector3 = (" + Il2Cpp.getFloat(made, VEC3_X) + ","
