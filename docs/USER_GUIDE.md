@@ -956,6 +956,22 @@ A value type (like `Vector3`) comes back as a boxed `Il2CppObject` whose fields 
 with the accessors. Reference types return the live object. Pass the result straight into any hook
 argument, field setter, or method call that wants that type.
 
+## Find every instance — `Il2Cpp.findInstances`
+
+Get every live instance of a `UnityEngine.Object` subclass (a `GameObject`, a component, a
+`MonoBehaviour`) — the backbone of ESP and scanning.
+
+```java
+Il2Cpp.Type enemy = new Il2Cpp.Type("Assembly-CSharp", "Game", "Enemy");
+Il2CppObject[] enemies = Il2Cpp.findInstances(enemy);
+for (Il2CppObject e : enemies) { /* read its transform, draw a Mirage3D marker on it… */ }
+```
+
+It uses `Resources.FindObjectsOfTypeAll`, so unlike Unity's `Object.FindObjectsOfType` — which
+returns only **active, enabled** scene objects — it also finds **inactive and disabled** objects
+and loaded assets (what `FindObjectsOfType` misses). It's a safe managed call. The handles are valid
+now; `persist()` any you keep across frames.
+
 ## Mirage 2D — an overlay, no permission
 
 Because Frostbite runs **inside the game's process**, Mirage draws on a transparent view in the

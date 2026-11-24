@@ -178,6 +178,28 @@ public final class Il2Cpp {
         return addr == 0 ? null : new Il2CppObject(addr);
     }
 
+    private static final Target RESOURCES_FIND_ALL = new Target(
+            "UnityEngine.CoreModule", "UnityEngine", "Resources", "FindObjectsOfTypeAll(static;System.Type)");
+
+    /**
+     * Every live instance of a {@code UnityEngine.Object} subclass (GameObject, a Component /
+     * MonoBehaviour, etc.), via {@code Resources.FindObjectsOfTypeAll}. Unlike
+     * {@code Object.FindObjectsOfType} — which returns only <b>active, enabled</b> scene objects —
+     * this also finds inactive and disabled objects and loaded assets, which is what you want for
+     * ESP and scanning. It is a safe managed call (no heap walk, no world-stop).
+     *
+     * <p>The returned handles are valid now; {@code persist()} any you keep across frames.
+     */
+    public static Il2CppObject[] findInstances(Type type) {
+        Il2CppObject typeObject = typeObject(type);
+        if (typeObject == null) return new Il2CppObject[0];
+        Il2CppObject array = invokeObject(null, RESOURCES_FIND_ALL, typeObject);
+        int n = arrayLength(array);
+        Il2CppObject[] result = new Il2CppObject[n];
+        for (int i = 0; i < n; i++) result[i] = arrayGet(array, i);
+        return result;
+    }
+
     // ---- creating objects ------------------------------------------------
 
     /**
