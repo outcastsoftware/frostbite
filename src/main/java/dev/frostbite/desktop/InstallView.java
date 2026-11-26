@@ -33,7 +33,7 @@ final class InstallView {
     private final Label runtimeStatus = Ui.label("runtime " + RuntimeProvider.DEFAULT_TAG + " · from GitHub", "mod-id");
     private final ProgressBar runtimeBar = new ProgressBar(0);
     private final Button buildBtn = new Button("Build Frostbite APK");
-    private final Label status = Ui.label("Aligned and signed (v1·v2·v3), then verified.", "status-muted");
+    private final Label status = Ui.label("", "status-muted");
     private boolean busy;
 
     InstallView(FrostbiteApp app) {
@@ -74,10 +74,8 @@ final class InstallView {
         Label label = Ui.label("Launch Activity", "field-label");
         HBox head = new HBox(10, label, autoChip);
         head.setAlignment(Pos.CENTER_LEFT);
-        Label helper = Ui.label("Read from the APK manifest. Edit it if the game uses a different entry.", "helper");
         activityField.textProperty().addListener((o, a, b) -> refresh());
-        VBox box = new VBox(8, head, activityField, helper);
-        return box;
+        return new VBox(8, head, activityField);
     }
 
     private Node runtimeRow() {
@@ -89,9 +87,8 @@ final class InstallView {
         HBox.setHgrow(info, Priority.ALWAYS);
         HBox inner = new HBox(14, Ui.icon("M12 3 v12 M7 11 l5 5 5-5 M4 20 h16", 18, Ui.HIGHLIGHT, 1.6, 24), info);
         inner.setAlignment(Pos.CENTER_LEFT);
-        inner.setStyle("-fx-background-color:#25282A; -fx-background-radius:11; -fx-border-color:#373A3C; -fx-border-radius:11; -fx-padding:12 16;");
-        Label helper = Ui.label("No download needed — the runtime is fetched and cached automatically.", "helper");
-        return new VBox(8, label, inner, helper);
+        inner.setStyle("-fx-background-color:#25282A; -fx-background-radius:11; -fx-padding:12 16;");
+        return new VBox(8, label, inner);
     }
 
     private Node fieldRow(String labelText, TextField field, Button action, String helper) {

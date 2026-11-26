@@ -1,9 +1,19 @@
 # Frostbite Desktop
 
-The combined desktop GUI prepares a Unity IL2CPP game APK and adds separately built Frostbite Java mods. It has two tabs:
+A JavaFX desktop app that prepares a Unity IL2CPP game APK and manages Frostbite mods inside it.
 
-1. **Install Frostbite:** select the original APK, `frostbite-runtime.zip`, the game's full launch Activity class, and an output APK.
-2. **Mods:** select the Frostbite-enabled APK, add one or more `.frostbite` mods and/or select installed mods to remove, and choose the final game APK output.
+## Launch
+
+**Double-click `run.bat`** (Windows). First launch builds the app, then opens it; later launches are quick.
+Needs a JDK and `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) pointing at an Android SDK with build-tools.
+Or, from a terminal: `gradlew run`. For a reusable launcher that doesn't rebuild, run `gradlew installDist`
+once and open `build/install/frostbite-desktop/bin/frostbite-desktop.bat`.
+
+## What it does
+
+1. **Install:** pick the original game APK. The launch Activity is auto-detected and the Frostbite runtime
+   is downloaded automatically — choose an output and build.
+2. **Mods:** pick the Frostbite APK, then add / remove / reorder / enable / inspect `.frostbite` mods and build.
 
 Both tabs use the bundled development key. No keystore setup is needed. Outputs are aligned, signed with APK Signature Schemes v1, v2, and v3, and verified. After the first step succeeds, the app opens the second tab and fills the Frostbite APK path. Since the key is distributed with the app, it provides a convenient consistent signature for development rather than a private publisher identity.
 

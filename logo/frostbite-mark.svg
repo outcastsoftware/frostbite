@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <filter id="concrete" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.014" numOctaves="4" seed="4" result="warp"/>
+      <feDisplacementMap in="SourceGraphic" in2="warp" scale="18" xChannelSelector="R" yChannelSelector="G" result="rough"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.42" numOctaves="3" seed="6" result="spk"/>
+      <feComponentTransfer in="spk" result="spkA">
+        <feFuncA type="discrete" tableValues="0 0 0 0 0 0 0 1 1"/>
+      </feComponentTransfer>
+      <feComposite in="rough" in2="spkA" operator="out" result="pitted"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="2" result="grain"/>
+      <feColorMatrix in="grain" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0" result="grainA"/>
+      <feComposite in="grainA" in2="pitted" operator="in" result="grainClip"/>
+      <feMerge><feMergeNode in="pitted"/><feMergeNode in="grainClip"/></feMerge>
+    </filter>
+    <!-- one snowflake arm, pointing up from center -->
+    <g id="arm" stroke="#F3F3EF" stroke-width="15" stroke-linecap="round">
+      <path d="M256 250 L256 92"/>
+      <path d="M256 146 L222 114"/><path d="M256 146 L290 114"/>
+      <path d="M256 192 L230 168"/><path d="M256 192 L282 168"/>
+    </g>
+  </defs>
+  <g filter="url(#concrete)" fill="none">
+    <!-- hexagon shell -->
+    <path d="M256 44 L440 150 L440 362 L256 468 L72 362 L72 150 Z"
+          stroke="#F3F3EF" stroke-width="16" stroke-linejoin="round"/>
+    <!-- frost crystal: six arms -->
+    <use href="#arm"/>
+    <use href="#arm" transform="rotate(60 256 256)"/>
+    <use href="#arm" transform="rotate(120 256 256)"/>
+    <use href="#arm" transform="rotate(180 256 256)"/>
+    <use href="#arm" transform="rotate(240 256 256)"/>
+    <use href="#arm" transform="rotate(300 256 256)"/>
+    <circle cx="256" cy="256" r="20" fill="#F3F3EF"/>
+  </g>
+</svg>

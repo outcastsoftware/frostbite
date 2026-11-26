@@ -13,6 +13,9 @@
     -fx-background-color: transparent;
 }
 
+/* Gray (not LCD) smoothing keeps small text crisp on the dark background. */
+.label, .button, .text-field, .text { -fx-font-smoothing-type: gray; }
+
 .window {
     -fx-background-color: #0E0F10;
     -fx-background-radius: 14;

@@ -64,7 +64,7 @@ public final class FrostbiteApp extends Application {
 
     // ---- window chrome ----
     private Node titleBar(Stage stage) {
-        HBox left = new HBox(11, Ui.logo(18), styled(new Label("FROSTBITE"), "wordmark"));
+        HBox left = new HBox(12, Ui.logo(26), styled(new Label("FROSTBITE"), "wordmark"));
         left.setAlignment(Pos.CENTER_LEFT);
 
         Button min = winButton("M1 8 H10", 11, false);
@@ -98,36 +98,36 @@ public final class FrostbiteApp extends Application {
         return b;
     }
 
+    // Lucide icons (lucide.dev, 24x24 stroke).
+    private static final String ICON_DOWNLOAD = "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3";
+    private static final String ICON_LAYERS = "m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"
+            + " M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"
+            + " M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17";
+
     // ---- sidebar ----
     private Node sidebar() {
-        HBox brand = new HBox(12, Ui.logo(30), new VBox(1,
-                styled(new Label("Frostbite"), "brand-name"),
-                styled(new Label("by Outcast"), "brand-sub")));
-        brand.setAlignment(Pos.CENTER_LEFT);
-        brand.setPadding(new Insets(4, 8, 22, 8));
-
-        navInstall = navItem("01", "Install", "install");
-        navMods = navItem("02", "Mods", "mods");
+        navInstall = navItem(ICON_DOWNLOAD, "Install", "install");
+        navMods = navItem(ICON_LAYERS, "Mods", "mods");
         VBox nav = new VBox(4, navInstall, navMods);
 
-        VBox rail = new VBox(brand, nav, Ui.grow());
+        VBox rail = new VBox(nav, Ui.grow());
         rail.getStyleClass().add("rail");
         rail.setMinWidth(224);
         rail.setPrefWidth(224);
         return rail;
     }
 
-    private Button navItem(String num, String text, String target) {
-        Label n = styled(new Label(num), "nav-num");
+    private Button navItem(String iconPath, String text, String target) {
+        javafx.scene.shape.SVGPath icon = Ui.icon(iconPath, 18, Ui.MUTED, 2, 24);
         Label t = styled(new Label(text), "nav-label");
-        HBox box = new HBox(12, n, t);
+        HBox box = new HBox(13, icon, t);
         box.setAlignment(Pos.CENTER_LEFT);
         Button b = new Button();
         b.setGraphic(box);
         b.setMaxWidth(Double.MAX_VALUE);
         b.getStyleClass().add("nav-item");
         b.setOnAction(e -> select(target));
-        b.getProperties().put("num", n);
+        b.getProperties().put("icon", icon);
         b.getProperties().put("label", t);
         return b;
     }
@@ -152,13 +152,12 @@ public final class FrostbiteApp extends Application {
 
     private void styleNav(Button nav, boolean active) {
         nav.getStyleClass().remove("nav-item-active");
-        Label num = (Label) nav.getProperties().get("num");
+        javafx.scene.shape.SVGPath icon = (javafx.scene.shape.SVGPath) nav.getProperties().get("icon");
         Label label = (Label) nav.getProperties().get("label");
-        num.getStyleClass().remove("nav-num-active");
+        icon.setStroke(active ? Ui.HIGHLIGHT : Ui.MUTED);
         label.getStyleClass().remove("nav-label-active");
         if (active) {
             nav.getStyleClass().add("nav-item-active");
-            num.getStyleClass().add("nav-num-active");
             label.getStyleClass().add("nav-label-active");
         }
     }

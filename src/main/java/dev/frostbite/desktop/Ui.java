@@ -21,18 +21,42 @@ final class Ui {
     static final Color INK = Color.web("#0E0F10");
     private Ui() {}
 
-    /** The real Outcast breach mark (single even-odd path, viewBox 512), filled at the given size. */
+    /** The Frostbite mark (viewBox 512): a hexagon shell with a six-arm frost crystal. */
     static Node logo(double size) {
-        SVGPath p = new SVGPath();
-        p.setContent("M 256 38 L 383 86 L 452 191 L 452 321 L 383 426 L 256 474 L 129 426 L 60 321 "
-                + "L 60 191 L 129 86 Z M 256 104 L 340 136 L 389 211 L 389 301 L 340 376 L 256 408 "
-                + "L 172 376 L 123 301 L 123 211 L 172 136 Z M 154 310 L 192 348 L 358 202 L 320 164 Z");
-        p.setFillRule(javafx.scene.shape.FillRule.EVEN_ODD);
-        p.setFill(TEXT);
+        SVGPath hex = new SVGPath();
+        hex.setContent("M256 44 L440 150 L440 362 L256 468 L72 362 L72 150 Z");
+        hex.setFill(Color.TRANSPARENT);
+        hex.setStroke(TEXT);
+        hex.setStrokeWidth(16);
+        hex.setStrokeLineJoin(javafx.scene.shape.StrokeLineJoin.ROUND);
+        Group marks = new Group(hex);
+        for (int i = 0; i < 6; i++) {
+            Group arm = frostArm();
+            arm.getTransforms().add(new javafx.scene.transform.Rotate(i * 60, 256, 256));
+            marks.getChildren().add(arm);
+        }
+        marks.getChildren().add(new javafx.scene.shape.Circle(256, 256, 20, TEXT));
         double scale = size / 512.0;
-        p.setScaleX(scale);
-        p.setScaleY(scale);
-        return new Group(p);
+        marks.setScaleX(scale);
+        marks.setScaleY(scale);
+        return new Group(marks);
+    }
+
+    private static Group frostArm() {
+        return new Group(
+                strokePath("M256 250 L256 92"), strokePath("M256 146 L222 114"),
+                strokePath("M256 146 L290 114"), strokePath("M256 192 L230 168"),
+                strokePath("M256 192 L282 168"));
+    }
+
+    private static SVGPath strokePath(String d) {
+        SVGPath p = new SVGPath();
+        p.setContent(d);
+        p.setFill(Color.TRANSPARENT);
+        p.setStroke(TEXT);
+        p.setStrokeWidth(15);
+        p.setStrokeLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        return p;
     }
 
     /** A stroke icon from 16x16 (or 24x24) path data. */
@@ -42,6 +66,8 @@ final class Ui {
         p.setFill(Color.TRANSPARENT);
         p.setStroke(color);
         p.setStrokeWidth(width);
+        p.setStrokeLineCap(javafx.scene.shape.StrokeLineCap.ROUND);
+        p.setStrokeLineJoin(javafx.scene.shape.StrokeLineJoin.ROUND);
         double scale = size / viewbox;
         p.setScaleX(scale);
         p.setScaleY(scale);
